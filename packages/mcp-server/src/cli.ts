@@ -47,7 +47,7 @@ export function buildProgram(): Command {
     .command('serve', { isDefault: true })
     .description('Start the MCP server over stdio (default) or Streamable HTTP')
     .option('--gateway', 'Enable Discord Gateway resource subscriptions (lazy-imports discord.js)')
-    .option('--http', 'Serve Streamable HTTP MCP at /mcp (requires DISCORD_MCP_ACCESS_TOKEN)')
+    .option('--http', 'Serve Streamable HTTP MCP at /mcp (optional DISCORD_MCP_ACCESS_TOKEN adds bearer auth)')
     .option('--host <host>', 'HTTP listen host (default: 127.0.0.1)')
     .option('--port <port>', 'HTTP listen port (default: 3000)', Number)
     .option('--profile <name>', 'Load a caller-owned bot profile before startup')

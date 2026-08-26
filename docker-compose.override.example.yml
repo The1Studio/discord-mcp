@@ -1,0 +1,11 @@
+# Template for docker-compose.override.yml (which is gitignored):
+#
+#   cp docker-compose.override.example.yml docker-compose.override.yml
+#   # then edit docker-compose.override.yml with your real token
+#
+# Docker Compose auto-merges docker-compose.override.yml with docker-compose.yml.
+# Replace YOUR_DISCORD_BOT_TOKEN with your caller-owned bot token.
+services:
+  discord-mcp:
+    environment:
+      DISCORD_TOKEN: "Bot YOUR_DISCORD_BOT_TOKEN"

@@ -1,0 +1,18 @@
+# Hosts the Discord MCP server as a remote Streamable HTTP endpoint.
+#
+# The repository Dockerfile defaults to the credential-free `catalog` command;
+# this service overrides CMD to run the real `serve --http` server, so it needs
+# DISCORD_TOKEN at runtime. Put your token in docker-compose.override.yml (see
+# docker-compose.override.example.yml) - it is auto-merged and gitignored.
+services:
+  discord-mcp:
+    build:
+      context: .
+    image: discord-mcp:local
+    command: ["serve", "--http", "--host", "0.0.0.0", "--port", "3000"]
+    ports:
+      # Binds to all host interfaces; clients connect to http://<host>:3000/mcp.
+      # With DISCORD_MCP_ACCESS_TOKEN unset the endpoint is open, so restrict
+      # access via a reverse proxy, VPN, or firewall rule.
+      - "3000:3000"
+    restart: unless-stopped

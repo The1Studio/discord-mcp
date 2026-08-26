@@ -74,11 +74,31 @@ discord-mcp smoke --profile devbot
 
 See [client setup](https://cappyeo.github.io/discord-mcp/start/client-setup/) for Claude, Codex, Cursor, VS Code/GitHub Copilot, Windsurf, Cline, Roo Code, Continue, Zed, OpenCode, Devin Local, and other clients, plus desktop-app token setup. New to MCP? <a href="https://cappyeo.github.io/discord-mcp/start/"><strong>Get started</strong></a> with the complete tutorial.
 
+For the OpenAI Responses API or Codex, run a Streamable HTTP endpoint and place
+it behind an HTTPS reverse proxy:
+
+```bash
+export DISCORD_TOKEN="Bot YOUR_DISCORD_BOT_TOKEN"
+discord-mcp serve --http --host 127.0.0.1 --port 3000
+```
+
+The endpoint is `/mcp`. Setting `DISCORD_MCP_ACCESS_TOKEN` (at least 32
+characters) adds Bearer auth; send `Authorization: Bearer <DISCORD_MCP_ACCESS_TOKEN>`.
+When it is unset the endpoint is open, so bind the listener to a private address
+and gate access at your proxy. It negotiates stable MCP `2026-07-28` while
+retaining stateless compatibility for 2025-era Streamable HTTP clients. Every
+client shares the deployment's caller-owned Discord bot identity, so use
+least-privilege Discord roles plus narrow `ALLOWED_GUILDS` and `MCP_CATEGORIES`
+allowlists. The [OpenAI remote MCP guide](https://cappyeo.github.io/discord-mcp/operations/openai/)
+covers HTTPS, the default 4 MiB body and 16-request in-flight ceilings,
+Responses API `tool_search`/`defer_loading`, Codex progressive discovery, and
+the current OAuth boundary.
+
 <h2 align="center"><img src="https://raw.githubusercontent.com/cappyeo/discord-mcp/main/.github/assets/readme/section-safety.svg" alt="Safety and deployment" width="720" /></h2>
 
 - **Your bot, your permissions.** Guild and tool-category allowlists constrain access. Keep bot tokens out of client config files and source control.
 - **Preview first.** Guided `setup` defaults to `MCP_WRITE_MODE=preview`, which blocks all mutations. Direct `serve` defaults to allowing ordinary writes; `MCP_DRY_RUN` covers only confirmation-gated destructive tools. See [safety controls](https://cappyeo.github.io/discord-mcp/reference/config/safety/) before enabling writes.
-- **Local by default.** Run over stdio, or self-host a bearer-protected Streamable HTTP endpoint behind HTTPS. See [remote MCP setup](https://cappyeo.github.io/discord-mcp/operations/openai/).
+- **Local by default.** Run over stdio, or self-host a Streamable HTTP endpoint behind HTTPS. Set `DISCORD_MCP_ACCESS_TOKEN` to require Bearer auth; when unset, gate the listener at your proxy. See [remote MCP setup](https://cappyeo.github.io/discord-mcp/operations/openai/).
 
 <h2 align="center"><img src="https://raw.githubusercontent.com/cappyeo/discord-mcp/main/.github/assets/readme/section-docs.svg" alt="Documentation" width="720" /></h2>
 
