@@ -9,3 +9,7 @@ services:
   discord-mcp:
     environment:
       DISCORD_TOKEN: "Bot YOUR_DISCORD_BOT_TOKEN"
+    ports:
+      # Published host port; clients use http://<host>:3000/mcp.
+      # Change the host side if 3000 is taken, e.g. "3001:3000".
+      - "3000:3000"

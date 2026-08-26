@@ -2,18 +2,16 @@
 #
 # The repository Dockerfile defaults to the credential-free `catalog` command;
 # this service overrides CMD to run the real `serve --http` server, so it needs
-# DISCORD_TOKEN at runtime. Put your token in docker-compose.override.yml (see
-# docker-compose.override.example.yml) - it is auto-merged and gitignored.
+# DISCORD_TOKEN at runtime. Put your token and the published host port in
+# docker-compose.override.yml (see docker-compose.override.example.yml) - it is
+# auto-merged and gitignored.
 services:
   discord-mcp:
     build:
       context: .
     image: discord-mcp:local
     command: ["serve", "--http", "--host", "0.0.0.0", "--port", "3000"]
-    ports:
-      # Binds to all host interfaces; clients use http://<host>:${DISCORD_MCP_PORT:-3000}/mcp.
-      # Override via DISCORD_MCP_PORT (e.g. in .env) when 3000 is taken.
-      # With DISCORD_MCP_ACCESS_TOKEN unset the endpoint is open, so restrict
-      # access via a reverse proxy, VPN, or firewall rule.
-      - "${DISCORD_MCP_PORT:-3000}:3000"
+    # No `ports:` here by design: compose appends port lists on merge, so re-
+    # declaring them in the override would keep both. The host port is set in
+    # docker-compose.override.yml instead.
     restart: unless-stopped
