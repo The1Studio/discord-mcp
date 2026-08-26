@@ -11,8 +11,9 @@ services:
     image: discord-mcp:local
     command: ["serve", "--http", "--host", "0.0.0.0", "--port", "3000"]
     ports:
-      # Binds to all host interfaces; clients connect to http://<host>:3000/mcp.
+      # Binds to all host interfaces; clients use http://<host>:${DISCORD_MCP_PORT:-3000}/mcp.
+      # Override via DISCORD_MCP_PORT (e.g. in .env) when 3000 is taken.
       # With DISCORD_MCP_ACCESS_TOKEN unset the endpoint is open, so restrict
       # access via a reverse proxy, VPN, or firewall rule.
-      - "3000:3000"
+      - "${DISCORD_MCP_PORT:-3000}:3000"
     restart: unless-stopped
