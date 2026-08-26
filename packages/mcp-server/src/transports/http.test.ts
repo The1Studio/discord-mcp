@@ -217,6 +217,21 @@ describe('startHttp', () => {
     );
   });
 
+  it('serves MCP requests directly when DISCORD_MCP_ACCESS_TOKEN is unset', async () => {
+    delete process.env.DISCORD_MCP_ACCESS_TOKEN;
+    server = await startHttp({ port: 0, registerSignalHandlers: false });
+    const transport = new StreamableHTTPClientTransport(endpoint());
+    const client = new Client({ name: 'http-open-test', version: '0.0.0' });
+
+    await client.connect(transport as never);
+    try {
+      const { tools } = await client.listTools();
+      expect(tools).toHaveLength(209);
+    } finally {
+      await client.close();
+    }
+  });
+
   it('rejects untrusted Host and Origin headers on the default loopback listener', async () => {
     server = await startHttp({ port: 0, registerSignalHandlers: false });
     const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} });

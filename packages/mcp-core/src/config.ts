@@ -27,7 +27,6 @@ const ConfigSchema = z.object({
       'ALLOWED_GUILDS must be a comma-separated list of 17-20 digit Discord snowflakes',
     )
     .optional(),
-  // Required by `serve --http`, but optional for the default local stdio transport.
   DISCORD_MCP_ACCESS_TOKEN: z
     .string()
     .min(32, 'DISCORD_MCP_ACCESS_TOKEN must be at least 32 characters')

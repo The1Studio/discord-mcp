@@ -123,10 +123,10 @@ function requestDeclaresBody(req: IncomingMessage): boolean {
  */
 export async function startHttp(options: StartHttpOptions = {}): Promise<Server> {
   const config = loadConfig();
+  // Optional bearer protection. When DISCORD_MCP_ACCESS_TOKEN is unset the
+  // endpoint is open and must be gated at the networking layer (reverse proxy,
+  // VPN, or Docker publish rule) when exposing the server directly.
   const accessToken = config.DISCORD_MCP_ACCESS_TOKEN;
-  if (accessToken === undefined) {
-    throw new Error('DISCORD_MCP_ACCESS_TOKEN is required for the HTTP transport.');
-  }
   const logger = createLogger(config);
 
   // Keep Cockatiel as the single retry owner. Reject queued/pre-emptive 429s
@@ -221,7 +221,7 @@ export async function startHttp(options: StartHttpOptions = {}): Promise<Server>
       return;
     }
 
-    if (!hasValidBearerToken(req.headers.authorization, accessToken)) {
+    if (accessToken !== undefined && !hasValidBearerToken(req.headers.authorization, accessToken)) {
       res.writeHead(401, { 'WWW-Authenticate': 'Bearer' }).end();
       return;
     }

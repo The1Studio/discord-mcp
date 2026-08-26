@@ -144,19 +144,21 @@ npx -y @discord-mcp/cli init --client cursor-cli
 
 ## Remote OpenAI / Codex MCP
 
-For the OpenAI Responses API or Codex, run a bearer-protected Streamable HTTP
-endpoint and place it behind an HTTPS reverse proxy:
+For the OpenAI Responses API or Codex, run a Streamable HTTP endpoint and place
+it behind an HTTPS reverse proxy:
 
 ```bash
 export DISCORD_TOKEN="Bot YOUR_DISCORD_BOT_TOKEN"
-export DISCORD_MCP_ACCESS_TOKEN="replace-with-a-long-random-secret"
 discord-mcp serve --http --host 127.0.0.1 --port 3000
 ```
 
-The endpoint is `/mcp`; send `Authorization: Bearer <DISCORD_MCP_ACCESS_TOKEN>`.
-It negotiates stable MCP `2026-07-28` while retaining stateless compatibility
-for 2025-era Streamable HTTP clients. Every authenticated client shares the
-deployment's caller-owned Discord bot identity, so use least-privilege Discord
+The endpoint is `/mcp`. Setting `DISCORD_MCP_ACCESS_TOKEN` (at least 32
+characters) adds Bearer auth; send `Authorization: Bearer <DISCORD_MCP_ACCESS_TOKEN>`.
+When it is unset the endpoint is open, so bind the listener to a private address
+and gate access at your proxy. It negotiates stable MCP `2026-07-28` while
+retaining stateless compatibility for 2025-era Streamable HTTP clients. Every
+client shares the deployment's caller-owned Discord bot identity, so use
+least-privilege Discord
 roles plus narrow `ALLOWED_GUILDS` and `MCP_CATEGORIES` allowlists. The
 [OpenAI remote MCP guide](https://cappyeo.github.io/discord-mcp/operations/openai/)
 covers HTTPS, the default 4 MiB body and 16-request in-flight ceilings,
