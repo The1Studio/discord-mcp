@@ -1,0 +1,76 @@
+name: deploy
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    # Org self-hosted runner on the deployment host itself ('sv-0', user dietpi),
+    # so the token never has to travel over SSH from a hosted runner - it is read
+    # from the org secret here and written straight into the compose override.
+    runs-on: [self-hosted, sv-0]
+    timeout-minutes: 30
+    env:
+      DEPLOY_ROOT: /root/Projects/discord-mcp
+      HOST_PORT: '3001'
+    steps:
+      - name: Sync the deployment checkout to origin/main
+        # reset --hard, not pull: the fork rebases onto upstream, so main is
+        # force-pushed and a merge-on-pull would either conflict or drag stale
+        # fork commits back in. Untracked files (the gitignored override) stay.
+        run: |
+          set -euo pipefail
+          sudo git -C "$DEPLOY_ROOT" fetch --prune origin
+          sudo git -C "$DEPLOY_ROOT" reset --hard origin/main
+          sudo git -C "$DEPLOY_ROOT" log -1 --oneline
+
+      - name: Write docker-compose.override.yml from the org secret
+        # The override is gitignored and regenerated on every deploy: the org
+        # secret DISCORD_TOKEN is the single source of truth, so no plaintext
+        # token is hand-maintained on the box. Include the 'Bot ' prefix only if
+        # your token needs it - both forms are accepted at runtime.
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DISCORD_TOKEN:-}" ]; then
+            echo "::error::org secret DISCORD_TOKEN is unset or not visible to this repository"
+            exit 1
+          fi
+          umask 077
+          sudo tee "$DEPLOY_ROOT/docker-compose.override.yml" > /dev/null <<EOF
+          services:
+            discord-mcp:
+              environment:
+                DISCORD_TOKEN: "$DISCORD_TOKEN"
+              ports:
+                - "${HOST_PORT}:3000"
+          EOF
+
+      - name: Rebuild and restart the stack
+        run: |
+          set -euo pipefail
+          cd "$DEPLOY_ROOT"
+          sudo docker compose up -d --build
+          sudo docker compose ps
+
+      - name: Smoke test - readiness endpoint
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 10); do
+            if curl -fsS "http://127.0.0.1:${HOST_PORT}/healthz"; then
+              echo " ✓ readiness pass"
+              exit 0
+            fi
+            echo "attempt $i: not ready, retry in 3s"
+            sleep 3
+          done
+          echo "✗ readiness probe failed"
+          cd "$DEPLOY_ROOT"
+          sudo docker compose logs --tail 50
+          exit 1
