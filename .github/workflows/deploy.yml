@@ -10,30 +10,36 @@ concurrency:
   cancel-in-progress: false
 jobs:
   deploy:
-    # Org self-hosted runner on the deployment host itself ('sv-0', user dietpi),
-    # so the token never has to travel over SSH from a hosted runner - it is read
-    # from the org secret here and written straight into the compose override.
-    runs-on: [self-hosted, sv-0]
+    # Org self-hosted runner 'sv-main' (labels self-hosted, Linux, X64, sv, deploy,
+    # sv-2), which runs on the deployment host itself (192.168.1.91), so the token
+    # goes from the org secret into the compose override without a network hop.
+    runs-on: [self-hosted, Linux, X64, sv-2]
     timeout-minutes: 30
     env:
       DEPLOY_ROOT: /root/Projects/discord-mcp
       HOST_PORT: '3001'
+      REPO_URL: https://github.com/The1Studio/discord-mcp.git
     steps:
-      - name: Sync the deployment checkout to origin/main
-        # reset --hard, not pull: the fork rebases onto upstream, so main is
-        # force-pushed and a merge-on-pull would either conflict or drag stale
-        # fork commits back in. Untracked files (the gitignored override) stay.
+      - name: Clone or update the deploy checkout to origin/main
+        # The runner is dietpi, which cannot traverse /root, so every git action runs
+        # through sudo. reset --hard, not pull: this fork rebases onto upstream and
+        # force-pushes main, so a merge-on-pull would conflict or drag stale commits
+        # back in. A missing checkout is bootstrapped here, so the first run on this
+        # box needs no manual setup.
         run: |
           set -euo pipefail
+          sudo mkdir -p "$(dirname "$DEPLOY_ROOT")"
+          if [ ! -d "$DEPLOY_ROOT/.git" ]; then
+            sudo git clone "$REPO_URL" "$DEPLOY_ROOT"
+          fi
           sudo git -C "$DEPLOY_ROOT" fetch --prune origin
           sudo git -C "$DEPLOY_ROOT" reset --hard origin/main
           sudo git -C "$DEPLOY_ROOT" log -1 --oneline
 
       - name: Write docker-compose.override.yml from the org secret
-        # The override is gitignored and regenerated on every deploy: the org
-        # secret DISCORD_TOKEN is the single source of truth, so no plaintext
-        # token is hand-maintained on the box. Include the 'Bot ' prefix only if
-        # your token needs it - both forms are accepted at runtime.
+        # The override is gitignored and regenerated on every deploy: the org secret
+        # DISCORD_TOKEN is the single source of truth, so no plaintext token is
+        # hand-maintained on the box.
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
         run: |
@@ -51,17 +57,16 @@ jobs:
               ports:
                 - "${HOST_PORT}:3000"
           EOF
-          # tee keeps an existing file's mode, so an override left at 644 from
-          # an earlier hand-written version would stay world-readable.
+          # tee keeps an existing file's mode, so an override left at 644 by an
+          # earlier hand-written version would stay world-readable.
           sudo chmod 600 "$DEPLOY_ROOT/docker-compose.override.yml"
 
       - name: Rebuild and restart the stack
-        # -f rather than `cd`: the runner is dietpi, which cannot even traverse
-        # /root, while compose runs as root through sudo. Naming the base file
-        # makes it the project directory (project name "discord-mcp"), but it
-        # also disables compose's automatic docker-compose.override.yml
-        # discovery — the override must be passed explicitly, and omitting it
-        # silently drops the token, leaving the container crash-looping.
+        # -f rather than `cd`: the runner is dietpi, which cannot enter /root, while
+        # compose runs as root through sudo. Naming a file with -f also disables
+        # compose's automatic docker-compose.override.yml discovery, so the override
+        # must be passed explicitly - omitting it silently drops the token and leaves
+        # the container crash-looping.
         run: |
           set -euo pipefail
           sudo docker compose -f "$DEPLOY_ROOT/docker-compose.yml" \
@@ -86,10 +91,10 @@ jobs:
           exit 1
 
       - name: Smoke test - the secret authenticates against Discord
-        # Readiness only proves the container is up with *some* long-enough
-        # DISCORD_TOKEN. A truncated or rotated-away secret would still deploy
-        # green and then 401 every tool call, so exercise one REST round trip
-        # through users_get_current and assert the bot identity comes back.
+        # Readiness only proves the container is up with *some* long-enough token; a
+        # wrong or rotated-away secret would deploy green and then 401 every tool
+        # call, so exercise one REST round trip through users_get_current and assert
+        # the bot identity.
         run: |
           set -euo pipefail
           curl -fsS -X POST "http://127.0.0.1:${HOST_PORT}/mcp" \
