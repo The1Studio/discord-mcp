@@ -53,11 +53,14 @@ jobs:
           EOF
 
       - name: Rebuild and restart the stack
+        # -f rather than `cd`: the runner is dietpi, which cannot even traverse
+        # /root, but the compose commands run as root through sudo. Naming the
+        # base file keeps the project name (directory basename) and the
+        # override auto-discovery next to it.
         run: |
           set -euo pipefail
-          cd "$DEPLOY_ROOT"
-          sudo docker compose up -d --build
-          sudo docker compose ps
+          sudo docker compose -f "$DEPLOY_ROOT/docker-compose.yml" up -d --build
+          sudo docker compose -f "$DEPLOY_ROOT/docker-compose.yml" ps
 
       - name: Smoke test - readiness endpoint
         run: |
@@ -71,6 +74,5 @@ jobs:
             sleep 3
           done
           echo "✗ readiness probe failed"
-          cd "$DEPLOY_ROOT"
-          sudo docker compose logs --tail 50
+          sudo docker compose -f "$DEPLOY_ROOT/docker-compose.yml" logs --tail 50
           exit 1
