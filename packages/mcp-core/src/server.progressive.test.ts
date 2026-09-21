@@ -359,7 +359,7 @@ describe('progressive tool surface', () => {
     }
   });
 
-  it('cuts category browse by 80% and the selected-tool discovery journey by 50%', async () => {
+  it('keeps category browse and the selected-tool discovery journey inside absolute byte budgets', async () => {
     const [compact, full, exact] = await Promise.all([
       progressiveClient.callTool({
         name: 'mcp_tools_search',
@@ -382,12 +382,14 @@ describe('progressive tool surface', () => {
     expect(full.structuredContent).toMatchObject({ detail: 'full' });
     const compactBytes = Buffer.byteLength(JSON.stringify(compact.structuredContent));
     const fullBytes = Buffer.byteLength(JSON.stringify(full.structuredContent));
-    expect(compactBytes).toBeLessThan(fullBytes * 0.2);
     const exactBytes = Buffer.byteLength(JSON.stringify(exact.structuredContent));
+    // Absolute ceilings, not ratios against `fullBytes`: compacting wire
+    // descriptions shrinks the full-detail payload, so a bound expressed as a
+    // fraction of it stops measuring the discovery bytes we actually care about.
     expect(compactBytes).toBeLessThan(3_000);
     expect(exactBytes).toBeLessThan(2_400);
+    expect(fullBytes).toBeLessThan(16_000);
     expect(compactBytes + exactBytes).toBeLessThan(5_000);
-    expect(compactBytes + exactBytes).toBeLessThan(fullBytes * 0.5);
   });
 
   it('invokes a hidden discovered tool through the risk-matched dispatcher', async () => {
