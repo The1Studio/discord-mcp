@@ -92,6 +92,72 @@ function assertMatchesOutputSchema(
   );
 }
 
+const DESCRIPTION_SECTION_RE = /\*\*([^*\n]+)\*\*:[ \t]*\n?([\s\S]*?)(?=\n\s*\*\*[^*\n]+\*\*:|$)/g;
+
+/**
+ * Collapse a section body (or a heading-less description) into one line per
+ * authored paragraph. Paragraph breaks survive because `compactSummary()`
+ * (`tool-discovery.ts`) feeds the first paragraph to `mcp_tools_search` results;
+ * merging paragraphs would push a URL or a second sentence into that summary.
+ */
+function compactText(text: string): string {
+  return text
+    .split(/\n[ \t]*\n/)
+    .map((paragraph) =>
+      paragraph
+        .split('\n')
+        .map((line) => line.trim().replace(/^-\s+/, '').replace(/\*\*/g, ''))
+        .filter((line) => line !== '')
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    )
+    .filter((paragraph) => paragraph !== '')
+    .join('\n\n');
+}
+
+/**
+ * Compact the authored NLT description for the MCP wire.
+ *
+ * `**Returns**` is dropped whenever the tool already publishes an `outputSchema`
+ * in the same `tools/list` entry, so the model is not told the result shape
+ * twice. The authored text, including its Returns section, stays in
+ * `__toolMetadata`, which the docs generator reads, so the published reference
+ * is unchanged.
+ *
+ * ponytail: wire text deliberately differs from source text. If a future tool
+ * needs prose that only the model should see, add an explicit field; do not
+ * revive a Returns section for it.
+ */
+function compactDescription(description: string, hasOutputSchema: boolean): string {
+  const parts: string[] = [];
+  let lastIndex = 0;
+  let matched = false;
+
+  for (const section of description.matchAll(DESCRIPTION_SECTION_RE)) {
+    matched = true;
+    const index = section.index ?? 0;
+    if (index > lastIndex) {
+      const leading = compactText(description.slice(lastIndex, index));
+      if (leading !== '') parts.push(leading);
+    }
+    lastIndex = index + section[0].length;
+    const heading = section[1]!.trim();
+    if (hasOutputSchema && heading.toLowerCase() === 'returns') continue;
+    const body = compactText(section[2]!);
+    parts.push(body === '' ? `${heading}:` : `${heading}: ${body}`);
+  }
+
+  // 19 descriptions carry no `**Heading**:` marker at all.
+  if (!matched) return compactText(description);
+
+  const tail = compactText(description.slice(lastIndex));
+  if (tail !== '') parts.push(tail);
+
+  // `catalog --check` rejects an empty description; never produce one.
+  return parts.length === 0 ? description.trim() : parts.join('\n\n');
+}
+
 export function defineTool<I extends Record<string, z.ZodTypeAny>, O>(
   def: ToolDefinition<I, O>,
 ): typeof Tool {
@@ -102,7 +168,10 @@ export function defineTool<I extends Record<string, z.ZodTypeAny>, O>(
   }
 
   class GeneratedTool extends Tool {
-    public override readonly description = def.description;
+    public override readonly description = compactDescription(
+      def.description,
+      def.outputSchema !== undefined,
+    );
     public override readonly inputSchema = def.inputSchema;
     // outputSchema is optional on the base class; only set when provided to
     // avoid overriding the base undefined with an explicit undefined.
