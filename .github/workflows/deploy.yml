@@ -29,7 +29,10 @@ jobs:
         run: |
           set -euo pipefail
           sudo mkdir -p "$(dirname "$DEPLOY_ROOT")"
-          if [ ! -d "$DEPLOY_ROOT/.git" ]; then
+          # The existence test needs sudo too: dietpi cannot stat inside /root, so a
+          # plain `-d` on an already-cloned checkout reads as false and the clone
+          # below then fails with "destination path already exists".
+          if ! sudo test -d "$DEPLOY_ROOT/.git"; then
             sudo git clone "$REPO_URL" "$DEPLOY_ROOT"
           fi
           sudo git -C "$DEPLOY_ROOT" fetch --prune origin
