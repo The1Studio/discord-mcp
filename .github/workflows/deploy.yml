@@ -51,6 +51,9 @@ jobs:
               ports:
                 - "${HOST_PORT}:3000"
           EOF
+          # tee keeps an existing file's mode, so an override left at 644 from
+          # an earlier hand-written version would stay world-readable.
+          sudo chmod 600 "$DEPLOY_ROOT/docker-compose.override.yml"
 
       - name: Rebuild and restart the stack
         # -f rather than `cd`: the runner is dietpi, which cannot even traverse
@@ -81,3 +84,23 @@ jobs:
           sudo docker compose -f "$DEPLOY_ROOT/docker-compose.yml" \
             -f "$DEPLOY_ROOT/docker-compose.override.yml" logs --tail 50
           exit 1
+
+      - name: Smoke test - the secret authenticates against Discord
+        # Readiness only proves the container is up with *some* long-enough
+        # DISCORD_TOKEN. A truncated or rotated-away secret would still deploy
+        # green and then 401 every tool call, so exercise one REST round trip
+        # through users_get_current and assert the bot identity comes back.
+        run: |
+          set -euo pipefail
+          curl -fsS -X POST "http://127.0.0.1:${HOST_PORT}/mcp" \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"users_get_current","arguments":{}}}' \
+            -o /tmp/discord-mcp-identity.json
+          grep -q '"bot":true' /tmp/discord-mcp-identity.json
+          if grep -q '"isError":true' /tmp/discord-mcp-identity.json; then
+            echo "::error::users_get_current failed against Discord"
+            cat /tmp/discord-mcp-identity.json
+            exit 1
+          fi
+          echo " ✓ bot identity confirmed"
