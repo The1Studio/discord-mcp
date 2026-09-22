@@ -57,6 +57,11 @@ jobs:
             discord-mcp:
               environment:
                 DISCORD_TOKEN: "$DISCORD_TOKEN"
+                # Destructive tools and Components V2 sends execute only when a call ALSO
+                # passes __confirm:true (V2: plus the one-time payload hash + approval id).
+                # With the default (true) every such call returns DRY_RUN_PREVIEW, so V2
+                # cards could never be sent from this deployment.
+                MCP_DRY_RUN: "false"
               ports:
                 - "${HOST_PORT}:3000"
           EOF
