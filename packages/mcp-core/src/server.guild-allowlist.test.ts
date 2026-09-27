@@ -70,15 +70,15 @@ afterEach(async () => {
 });
 
 describe('ALLOWED_GUILDS server boundary', () => {
-  it('preserves the full 209-tool compatibility surface when unset', async () => {
+  it('preserves the full 210-tool compatibility surface when unset', async () => {
     const { client } = await connect();
-    expect((await client.listTools()).tools).toHaveLength(209);
+    expect((await client.listTools()).tools).toHaveLength(210);
   });
 
-  it('hides unprovable routes and advertises the remaining 176 tools', async () => {
+  it('hides unprovable routes and advertises the remaining 177 tools', async () => {
     const { client } = await connect({ ALLOWED_GUILDS: ALLOWED });
     const names = (await client.listTools()).tools.map((tool) => tool.name);
-    expect(names).toHaveLength(176);
+    expect(names).toHaveLength(177);
     expect(names).not.toContain('app_emojis_list');
     expect(names).not.toContain('app_emojis_get');
     expect(names).not.toContain('interactions_create_response');

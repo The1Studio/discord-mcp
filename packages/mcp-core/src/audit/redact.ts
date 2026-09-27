@@ -58,7 +58,7 @@ const SENSITIVE_KEYS_BY_TOOL: Record<string, ReadonlySet<string>> = {
   // Base64 image data is caller-owned content and can be hundreds of
   // kilobytes; never persist even a prefix in the audit journal.
   app_emojis_create: new Set(['image']),
-  messages_send: new Set(['content']),
+  messages_send: new Set(['content', 'attachments']),
   messages_edit: new Set(['content']),
   // length only, no IDs leaked - the redactor will replace the array
   // with `[REDACTED:${arr.length}ch]`-style marker via the value path.

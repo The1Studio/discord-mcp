@@ -310,7 +310,7 @@ try {
   assert.equal(catalogCheck.ok, true);
   assert.deepEqual(catalogCheck.data, {
     schema_version: 'discord-mcp.catalog-check.v1',
-    tool_count: 209,
+    tool_count: 210,
     resource_count: 6,
     execution_guard: 'CATALOG_ONLY',
     credentials_required: false,
@@ -370,7 +370,7 @@ try {
   try {
     await catalogClient.connect(catalogTransport);
     const { tools } = await catalogClient.listTools();
-    assert.equal(tools.length, 209);
+    assert.equal(tools.length, 210);
     for (const request of [
       { name: 'guild_get', arguments: { guild_id: '111122223333444455' } },
       {

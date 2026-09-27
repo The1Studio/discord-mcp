@@ -56,7 +56,7 @@ describe('MCP_CATEGORIES allowlist', () => {
     expect(names).not.toContain('inspiration_emoji_gg_search');
     // meta stays reachable so introspection does not vanish on a scoped deploy.
     expect(names).toContain('mcp_pipeline');
-    expect(tools.length).toBeLessThan(209);
+    expect(tools.length).toBeLessThan(210);
   });
 
   it('rejects a disallowed tool called by name, not just hidden from the list', async () => {
@@ -91,14 +91,14 @@ describe('MCP_CATEGORIES validation and defaults', () => {
   it('allows everything when unset', async () => {
     const client = await connect(BASE_ENV);
     const { tools } = await client.listTools();
-    expect(tools.length).toBe(209);
+    expect(tools.length).toBe(210);
     await client.close();
   });
 
   it('allows everything when blank', async () => {
     const client = await connect({ ...BASE_ENV, MCP_CATEGORIES: '   ' });
     const { tools } = await client.listTools();
-    expect(tools.length).toBe(209);
+    expect(tools.length).toBe(210);
     await client.close();
   });
 
