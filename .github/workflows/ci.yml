@@ -22,7 +22,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-latest]
+        # Self-hosted label sets in place of the ubuntu-24.04 / windows-latest
+        # hosted runners (org Actions budget exhausted for Sept, core#3035).
+        # No Docker in this job, so no `cicd` label.
+        os:
+          - [self-hosted, Linux, X64, arc, the1studio, org]
+          - [self-hosted, X64, Windows]
         node: ['22.12', '24.x']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -40,7 +45,7 @@ jobs:
       - run: pnpm exec publint --strict packages/mcp-core
       - run: pnpm exec publint --strict packages/mcp-server
   pack:
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, arc, the1studio, org]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -55,7 +60,8 @@ jobs:
       - name: Verify clean-install packaged transports
         run: node .github/scripts/assert-packaged-cli.mjs
   catalog-container:
-    runs-on: ubuntu-24.04
+    # Runs `docker build` -> needs the cicd label (Docker donors never carry it).
+    runs-on: [self-hosted, Linux, X64, arc, the1studio, org, cicd]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -69,7 +75,7 @@ jobs:
       - name: Verify credential-free catalog container
         run: node .github/scripts/assert-catalog-container.mjs
   audit:
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, arc, the1studio, org]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
