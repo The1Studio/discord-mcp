@@ -45,6 +45,16 @@ jobs:
         # hand-maintained on the box.
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          # Studio (GitHub-token) bearer gate: NON-secret repository variables, unset by default. An unset
+          # variable renders as an empty string, which every flag treats as OFF, so this step is a no-op
+          # until an operator sets them. The override is regenerated on every deploy, which is why the
+          # gate is configured here and not by editing a file on the box. See docs/studio-auth.md.
+          STUDIO_AUTH_ENABLED: ${{ vars.STUDIO_AUTH_ENABLED }}
+          STUDIO_AUTH_REQUIRED: ${{ vars.STUDIO_AUTH_REQUIRED }}
+          STUDIO_AUTH_ISSUER: ${{ vars.STUDIO_AUTH_ISSUER }}
+          STUDIO_AUTH_JWKS_URL: ${{ vars.STUDIO_AUTH_JWKS_URL }}
+          STUDIO_AUTH_ALLOW_SUBS: ${{ vars.STUDIO_AUTH_ALLOW_SUBS }}
+          STUDIO_AUTH_STUDIO_KIDS: ${{ vars.STUDIO_AUTH_STUDIO_KIDS }}
         run: |
           set -euo pipefail
           if [ -z "${DISCORD_TOKEN:-}" ]; then
@@ -62,6 +72,12 @@ jobs:
                 # With the default (true) every such call returns DRY_RUN_PREVIEW, so V2
                 # cards could never be sent from this deployment.
                 MCP_DRY_RUN: "false"
+                STUDIO_AUTH_ENABLED: "${STUDIO_AUTH_ENABLED:-}"
+                STUDIO_AUTH_REQUIRED: "${STUDIO_AUTH_REQUIRED:-}"
+                STUDIO_AUTH_ISSUER: "${STUDIO_AUTH_ISSUER:-}"
+                STUDIO_AUTH_JWKS_URL: "${STUDIO_AUTH_JWKS_URL:-}"
+                STUDIO_AUTH_ALLOW_SUBS: "${STUDIO_AUTH_ALLOW_SUBS:-}"
+                STUDIO_AUTH_STUDIO_KIDS: "${STUDIO_AUTH_STUDIO_KIDS:-}"
               ports:
                 - "${HOST_PORT}:3000"
           EOF

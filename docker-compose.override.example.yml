@@ -9,6 +9,15 @@ services:
   discord-mcp:
     environment:
       DISCORD_TOKEN: "Bot YOUR_DISCORD_BOT_TOKEN"
+      # Optional studio (GitHub-token) bearer gate. OFF unless STUDIO_AUTH_ENABLED is exactly "true".
+      # See docs/studio-auth.md. Leave these commented for local use.
+      # STUDIO_AUTH_ENABLED: "true"
+      # STUDIO_AUTH_REQUIRED: "true"            # only with ENABLED; refuses requests with no studio credential
+      # STUDIO_AUTH_ISSUER: "https://auth.example"
+      # STUDIO_AUTH_JWKS_URL: "https://auth.example/.well-known/jwks.json"   # https only
+      # STUDIO_AUTH_ALLOW_SUBS: "1001,1002"     # numeric GitHub ids; empty = nobody
+      # STUDIO_AUTH_STUDIO_KIDS: ""             # optional: pin signing kids to the studio tier
+      # STUDIO_AUTH_AUDIENCE: ""                # do not set: pinned to discord-mcp in code
     ports:
       # Published host port; clients use http://<host>:3000/mcp.
       # Change the host side if 3000 is taken, e.g. "3001:3000".
