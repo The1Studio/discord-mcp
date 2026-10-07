@@ -418,25 +418,70 @@ describe('GET /healthz is the only exemption, and it is exactly that', () => {
     ['POST'],
     ['PUT'],
     ['DELETE'],
-  ])('%s /healthz is NOT exempt (401 under REQUIRED)', async (method) => {
+  ])('%s /healthz is NOT exempt: the gate refuses it with the exact 401 studio_credential_required', async (method) => {
     await boot(REQUIRED);
     const reply = await send({ method, path: '/healthz' });
     expect(reply.status).toBe(401);
+    // HEAD carries no body by definition; the other methods name the refusal code.
+    if (method !== 'HEAD') {
+      expect(JSON.parse(reply.body)).toEqual({
+        error: 'unauthorized',
+        code: 'studio_credential_required',
+      });
+    }
+    expect(reply.headers['www-authenticate']).toBe('Bearer realm="discord-mcp"');
   });
 
+  // Each row is one widening axis of the exemption (case, trailing slash, prefix, suffix, extra segment,
+  // encoding, delimiter). Under REQUIRED with no credential none may reach the health handler (200) or the
+  // gate (401): the router answers an exact, empty 404 before any credential is read. A 401 here would mean the
+  // router stopped being the first line; a 200 would mean the exemption widened.
   it.each([
-    ['/HEALTHZ'],
-    ['/Healthz'],
-    ['/healthz/'],
-    ['/evil/healthz'],
-    ['//evil/healthz/x'],
-    ['/%68ealthz'],
-    ['/healthz%2f'],
-    ['/healthz;x'],
-  ])('GET %s is never a 200 under REQUIRED (it is not the route)', async (path) => {
+    ['/HEALTHZ', 'case fold'],
+    ['/Healthz', 'case fold (mixed)'],
+    ['/healthz/', 'trailing slash'],
+    ['/healthzx', 'prefix match'],
+    ['/healthz.json', 'prefix match with extension'],
+    ['/evil/healthz', 'suffix match'],
+    ['/x/healthz', 'suffix match (one segment)'],
+    ['//evil/healthz/x', 'normalised, extra tail segment'],
+    ['/%68ealthz', 'percent-encoded letter'],
+    ['/healthz%2f', 'percent-encoded slash'],
+    ['/healthz;x', 'path parameter delimiter'],
+  ])('GET %s (%s) is neither exempt nor served under REQUIRED: the router 404s it before the gate', async (path) => {
     await boot(REQUIRED);
     const reply = await send({ method: 'GET', path });
     expect(reply.status, path).toBe(404);
+    expect(reply.body, path).toBe('');
+    expect(reply.headers['www-authenticate'], path).toBeUndefined();
+    expect(dispatch.count).toBe(0);
+  });
+
+  // The two request targets that URL normalisation folds INTO the exempt route. They are open by design (the
+  // route calls no tool and answers a constant), so they are enumerated here and in docs/studio-auth.md rather
+  // than left as an unlisted surprise. The enumeration is the contract: a third normalising form must be added
+  // to both on purpose.
+  it.each([
+    [
+      '//evil/healthz',
+      'a leading double slash makes `evil` the URL host and leaves /healthz as the path',
+    ],
+    ['/healthz?x=1', 'the query string is not part of the pathname'],
+  ])('GET %s is answered 200 {"status":"ok"} with no credential (%s)', async (path) => {
+    await boot(REQUIRED);
+    const reply = await send({ method: 'GET', path });
+    expect(reply.status, path).toBe(200);
+    expect(JSON.parse(reply.body)).toEqual({ status: 'ok' });
+    expect(dispatch.count).toBe(0);
+  });
+
+  it('the same normalising forms with a method other than GET are refused 401, not exempt', async () => {
+    await boot(REQUIRED);
+    for (const path of ['//evil/healthz', '/healthz?x=1']) {
+      const reply = await send({ method: 'POST', path, body: '{}' });
+      expect(reply.status, path).toBe(401);
+      expect(JSON.parse(reply.body).code, path).toBe('studio_credential_required');
+    }
   });
 
   it('the exemption skips only the studio gate: with a shared secret set, /healthz still demands it', async () => {

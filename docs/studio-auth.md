@@ -51,9 +51,23 @@ gate covers everything except one thing:
 
 - `GET /healthz`, **kept open on purpose** in every mode. The deploy workflow's readiness smoke test and the container
   probe call it with no credential; it answers `{"status":"ok"}` and can call no tool. The exemption is the literal
-  `GET /healthz`: `HEAD`/`POST /healthz` are NOT exempt, and `/HEALTHZ`, `/healthz/`, `/evil/healthz`, `/%68ealthz` are not
-  that route at all (404, pinned by test). The exemption skips only this gate: with `DISCORD_MCP_ACCESS_TOKEN` set,
-  `/healthz` still demands it, as before.
+  `GET /healthz`: `HEAD`/`POST`/`PUT`/`DELETE /healthz` are NOT exempt (`401 studio_credential_required` under REQUIRED), and
+  `/HEALTHZ`, `/Healthz`, `/healthz/`, `/healthzx`, `/evil/healthz`, `/x/healthz`, `/%68ealthz`, `/healthz%2f` and `/healthz;x`
+  are not that route at all (the router answers an empty `404` before any credential is read). Pinned by test, per widening
+  axis, on the predicate `isStudioExemptRoute` (a request-level test cannot see a widened comparison, because the router
+  404s those paths first).
+
+  The credential-free surface is **exactly** the following, and nothing else. Two extra request targets reach it through URL
+  normalisation, and both answer the same constant `200 {"status":"ok"}` with no credential:
+
+  | Request target | Why it is `/healthz` |
+  |---|---|
+  | `GET /healthz` | the literal route |
+  | `GET //evil/healthz` | a leading `//` makes `evil` the URL host; the parsed pathname is `/healthz` |
+  | `GET /healthz?x=1` | the query string is not part of the pathname |
+
+  The same two targets with any other method are refused `401`. The exemption skips only this gate: with
+  `DISCORD_MCP_ACCESS_TOKEN` set, `/healthz` still demands it, as before.
 
 A request whose target the URL parser rejects (`GET //`, `GET http://[bad/`) gets `400 {"error":"bad_request","code":"invalid_request_target"}`
 with the gate on (see blocker 5).

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createModuleLoader,
   createStudioGuard,
+  isStudioExemptRoute,
   isStudioJws,
   parseAllowSubs,
   pickStudioAuthEnv,
@@ -260,6 +261,46 @@ describe('readStudioAuthConfig', () => {
 const jws = (header: unknown, payload = 'e30', signature = 'AAAA'): string =>
   `${b64url(JSON.stringify(header))}.${payload}.${signature}`;
 
+describe('isStudioExemptRoute: exactly GET /healthz, in the direction a widening would go', () => {
+  // http.ts 404s every unrouted path before the gate, so a widened comparison cannot be seen through a socket:
+  // this predicate is the only place each widening axis is observable. Each row below is a would-be-exempt
+  // input that a plausible "small refactor" (lowercase, startsWith, endsWith, tolerate a trailing slash,
+  // accept HEAD) would start admitting, and each must stay refused.
+  it('exempts the one literal route', () => {
+    expect(isStudioExemptRoute('GET', '/healthz')).toBe(true);
+  });
+
+  it.each([
+    ['GET', '/HEALTHZ', 'case fold'],
+    ['GET', '/Healthz', 'case fold (mixed)'],
+    ['GET', '/healthz/', 'trailing slash'],
+    ['GET', '/healthzx', 'prefix match'],
+    ['GET', '/healthz.json', 'prefix match with extension'],
+    ['GET', '/evil/healthz', 'suffix match'],
+    ['GET', '/x/healthz', 'suffix match (one segment)'],
+    ['GET', '//healthz', 'double slash'],
+    ['GET', '/mcp', 'the protected route'],
+    ['GET', '', 'empty path'],
+    ['GET', undefined, 'no path'],
+    ['HEAD', '/healthz', 'HEAD'],
+    ['POST', '/healthz', 'POST'],
+    ['PUT', '/healthz', 'PUT'],
+    ['DELETE', '/healthz', 'DELETE'],
+    ['get', '/healthz', 'lowercase method'],
+    [undefined, '/healthz', 'no method'],
+    ['GET ', '/healthz', 'method with trailing space'],
+    ['GET', '/healthz ', 'path with trailing space'],
+  ])('%s %s (%s) is NOT exempt', (method, pathname) => {
+    expect(isStudioExemptRoute(method, pathname)).toBe(false);
+  });
+
+  it('http.ts consults this predicate in the gate condition (a predicate nothing calls guards nothing)', () => {
+    const source = readFileSync(new URL('./http.ts', import.meta.url), 'utf8');
+    expect(source.match(/isStudioExemptRoute\(req\.method, pathname\)/g)).toHaveLength(1);
+    expect(source).toContain('studio !== null && !isStudioExemptRoute(req.method, pathname)');
+  });
+});
+
 describe('isStudioJws: the claim rule', () => {
   it('claims a three-segment JWS whose protected header has alg ES256', () => {
     expect(isStudioJws(jws({ alg: 'ES256', kid: 'k' }))).toBe(true);
@@ -338,7 +379,9 @@ describe('isStudioJws: the claim rule', () => {
     expect(isStudioJws(`${std}.e30.AAAA`)).toBe(false);
     // control: the same bytes as base64url ARE claimed, so the refusal above is about the alphabet alone.
     expect(
-      isStudioJws(`${Buffer.from('{"alg":"ES256","x":"???>>>>>"}').toString('base64url')}.e30.AAAA`),
+      isStudioJws(
+        `${Buffer.from('{"alg":"ES256","x":"???>>>>>"}').toString('base64url')}.e30.AAAA`,
+      ),
     ).toBe(true);
   });
 

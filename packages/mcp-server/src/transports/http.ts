@@ -24,6 +24,7 @@ import { recordBlueprintActivity } from '../lib/activity.js';
 import type { OtelHandle } from '../otel.js';
 import {
   createStudioGuard,
+  isStudioExemptRoute,
   pickStudioAuthEnv,
   type StudioLogSink,
   studioBadRequestResponse,
@@ -270,7 +271,7 @@ export async function startHttp(options: StartHttpOptions = {}): Promise<Server>
     // call no tool). A refusal is a complete response written BEFORE any MCP handling exists. The exemption
     // skips only THIS gate: the legacy DISCORD_MCP_ACCESS_TOKEN check below still applies to it.
     let studioAuthenticated = false;
-    if (studio !== null && !(req.method === 'GET' && pathname === '/healthz')) {
+    if (studio !== null && !isStudioExemptRoute(req.method, pathname)) {
       const decision = await studio.decide(req.headers);
       if (decision.decision === 'refuse') {
         writeStudioResponse(req, res, studioRefusalResponse(decision, pathname === '/mcp'));

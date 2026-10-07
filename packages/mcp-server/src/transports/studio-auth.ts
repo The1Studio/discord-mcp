@@ -336,6 +336,22 @@ export function isStudioJws(token: unknown): boolean {
   }
 }
 
+// ---------------------------------------------------------------- the one credential-free route
+
+/**
+ * Whether a request skips the studio gate: exactly `GET /healthz`, nothing else. The comparison is on the
+ * parsed pathname and the raw method, both exact: no case folding, no prefix or suffix, no trailing slash,
+ * no other method. Kept as one named predicate (not an inline expression) because http.ts routes every
+ * other path to a 404 BEFORE the gate, so a widened comparison here is invisible to a request-level test;
+ * the unit spec pins each widening axis on this function instead (http.studio.test.ts).
+ */
+export function isStudioExemptRoute(
+  method: string | undefined,
+  pathname: string | undefined,
+): boolean {
+  return method === 'GET' && pathname === '/healthz';
+}
+
 // ---------------------------------------------------------------- the decision
 
 export interface StudioRefusal {
