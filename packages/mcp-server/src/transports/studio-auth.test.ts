@@ -322,6 +322,26 @@ describe('isStudioJws: the claim rule', () => {
     expect(isStudioJws(value)).toBe(false);
   });
 
+  it('does not claim an otherwise-ES256 header that is not valid UTF-8 (the decode is fatal)', () => {
+    const bytes = Buffer.concat([
+      Buffer.from('{"alg":"ES256","p":"'),
+      Buffer.from([0xff]),
+      Buffer.from('"}'),
+    ]);
+    expect(isStudioJws(`${bytes.toString('base64url')}.e30.AAAA`)).toBe(false);
+  });
+
+  it('does not claim a header written in standard base64 (+ and / are not base64url)', () => {
+    const std = Buffer.from('{"alg":"ES256","x":"???>>>>>"}').toString('base64');
+    expect(std).toMatch(/[+/]/);
+    expect(std.endsWith('=')).toBe(false);
+    expect(isStudioJws(`${std}.e30.AAAA`)).toBe(false);
+    // control: the same bytes as base64url ARE claimed, so the refusal above is about the alphabet alone.
+    expect(
+      isStudioJws(`${Buffer.from('{"alg":"ES256","x":"???>>>>>"}').toString('base64url')}.e30.AAAA`),
+    ).toBe(true);
+  });
+
   it('ignores the payload and signature segments (the verifier owns them)', () => {
     expect(isStudioJws(jws({ alg: 'ES256' }, '!!!!', '????'))).toBe(true);
   });

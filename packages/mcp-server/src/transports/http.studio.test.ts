@@ -9,7 +9,7 @@
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import type { Server } from 'node:http';
-import { request } from 'node:http';
+import { Agent, request } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createConnection } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -69,8 +69,16 @@ function port(): number {
 }
 
 function send(
-  options: { method?: string; path?: string; headers?: Record<string, string>; body?: string } = {},
+  options: {
+    method?: string;
+    path?: string;
+    headers?: Record<string, string>;
+    body?: string;
+    /** Offer keep-alive, so a `Connection: close` in the reply is the SERVER's choice, not an echo of ours. */
+    keepAlive?: boolean;
+  } = {},
 ): Promise<Reply> {
+  const agent = options.keepAlive ? new Agent({ keepAlive: true }) : false;
   return new Promise((resolve, reject) => {
     const req = request(
       {
@@ -78,7 +86,7 @@ function send(
         port: port(),
         method: options.method ?? 'POST',
         path: options.path ?? '/mcp',
-        agent: false,
+        agent,
         headers: {
           ...(options.method === 'GET' || options.method === 'HEAD'
             ? {}
@@ -92,13 +100,14 @@ function send(
       (response) => {
         const chunks: Buffer[] = [];
         response.on('data', (chunk: Buffer) => chunks.push(chunk));
-        response.once('end', () =>
+        response.once('end', () => {
+          if (agent) agent.destroy();
           resolve({
             status: response.statusCode ?? 0,
             headers: response.headers,
             body: Buffer.concat(chunks).toString('utf8'),
-          }),
-        );
+          });
+        });
       },
     );
     req.once('error', reject);
@@ -331,7 +340,7 @@ describe('dual mode (ENABLED, REQUIRED off): the studio bearer is an ADDITIONAL 
 describe('REQUIRED: the open fall-through is closed', () => {
   it('no credential is 401 studio_credential_required, a complete JSON response, before any dispatch', async () => {
     await boot(REQUIRED);
-    const reply = await list();
+    const reply = await send({ body: LIST_TOOLS, keepAlive: true });
     expect(reply.status).toBe(401);
     expect(reply.headers['content-type']).toBe('application/json');
     expect(reply.headers['content-length']).toBe(String(Buffer.byteLength(reply.body)));
@@ -375,6 +384,7 @@ describe('REQUIRED: the open fall-through is closed', () => {
     const reply = await send({
       body: 'x'.repeat(4096),
       headers: { 'transfer-encoding': 'chunked' },
+      keepAlive: true,
     });
     expect(reply.status).toBe(401);
     expect(reply.headers.connection).toBe('close');
