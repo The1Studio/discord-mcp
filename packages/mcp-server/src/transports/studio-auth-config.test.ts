@@ -7,17 +7,9 @@
  * A guard that never fails guards nothing: each check below is mutated in studio-auth.mutation notes (PR body).
  */
 import { spawnSync } from 'node:child_process';
-import {
-  chmodSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, join, relative } from 'node:path';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
@@ -27,6 +19,7 @@ import {
   STUDIO_AUTH_ENV_KEYS,
   STUDIO_REFUSAL_CODES,
 } from './studio-auth.js';
+import { parseOverride, renderOverride } from './testkit/compose-render.js';
 
 const REPO = fileURLToPath(new URL('../../../../', import.meta.url));
 const read = (relativePath: string) => readFileSync(join(REPO, relativePath), 'utf8');
@@ -110,36 +103,17 @@ describe('the deploy override', () => {
     expect(writeStep?.run).not.toContain('STUDIO_AUTH_AUDIENCE');
   });
 
-  function render(env: Record<string, string>) {
-    const dir = mkdtempSync(join(tmpdir(), 'discord-mcp-deploy-render-'));
-    try {
-      const bin = join(dir, 'bin');
-      mkdirSync(bin);
-      writeFileSync(join(bin, 'sudo'), '#!/bin/sh\nexec "$@"\n');
-      chmodSync(join(bin, 'sudo'), 0o755);
-      const root = join(dir, 'checkout');
-      mkdirSync(root);
-      const result = spawnSync('bash', ['-c', writeStep?.run ?? 'exit 99'], {
-        env: {
-          PATH: `${bin}${delimiter}${process.env.PATH ?? ''}`,
-          DEPLOY_ROOT: root,
-          HOST_PORT: '3001',
-          DISCORD_TOKEN: `Bot ${'t'.repeat(60)}`,
-          ...env,
-        },
-        encoding: 'utf8',
-      });
-      const override =
-        result.status === 0 ? readFileSync(join(root, 'docker-compose.override.yml'), 'utf8') : '';
-      return { status: result.status, stderr: result.stderr, override };
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  }
-
+  const render = (env: Record<string, string>) => {
+    const result = renderOverride(env);
+    return {
+      status: result.status,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      override: result.override,
+    };
+  };
   const environmentOf = (override: string): Record<string, string> =>
-    (parse(override) as { services: { 'discord-mcp': { environment: Record<string, string> } } })
-      .services['discord-mcp'].environment;
+    parseOverride(override).environment;
 
   // The runner is Linux; the render needs bash, so this lane does not run on the Windows matrix leg.
   const bash = process.platform === 'win32' ? it.skip : it;
@@ -174,12 +148,14 @@ describe('the deploy override', () => {
     expect(createStudioGuard(pickStudioAuthEnv(environment))).not.toBeNull();
   });
 
-  bash('a lookalike flag value in the variable renders as written and is still OFF', () => {
-    const { status, override } = render({ STUDIO_AUTH_ENABLED: 'True' });
-    expect(status).toBe(0);
-    const environment = environmentOf(override);
-    expect(environment.STUDIO_AUTH_ENABLED).toBe('True');
-    expect(createStudioGuard(pickStudioAuthEnv(environment))).toBeNull();
+  bash('a lookalike flag value is refused at deploy (loud), never rendered as a silent OFF', () => {
+    const { status, stdout, override } = render({ STUDIO_AUTH_ENABLED: 'True' });
+    expect(status).not.toBe(0);
+    expect(stdout).toContain('::error::STUDIO_AUTH_ENABLED must be exactly "true" or "false"');
+    expect(override).toBe('');
+    // The server itself would still treat the lookalike as OFF (the contract in studio-auth.ts); the deploy
+    // refuses it earlier so an operator who meant ON finds out at deploy time, not at the first 200.
+    expect(createStudioGuard(pickStudioAuthEnv({ STUDIO_AUTH_ENABLED: 'True' }))).toBeNull();
   });
 
   it('the render harness is real: a broken run script fails it', () => {
@@ -251,6 +227,7 @@ describe('wiring: a test nothing runs guards nothing', () => {
     'http.differential.test.ts',
     'studio-auth-config.test.ts',
     'studio-auth.entrypoint.test.ts',
+    'compose-override-render.test.ts',
   ];
   const vitestConfig = read('packages/mcp-server/vitest.config.ts');
 

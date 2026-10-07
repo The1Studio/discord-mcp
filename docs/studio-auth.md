@@ -129,6 +129,24 @@ variables render as empty strings, which every flag treats as off, so **a merge 
 and the rendered override is asserted in `studio-auth-config.test.ts`). Enabling is setting repository variables and
 re-running the deploy, never a code change.
 
+The override is written by `.github/scripts/render-compose-override.sh`, not by an inline heredoc, and **every studio value is
+checked against its documented charset before anything is written**. A value outside it fails the deploy step with an
+`::error::` that names the variable (never its value) and leaves the previous override untouched; empty or unset means
+off. This is a security control: the file is YAML that `docker compose up` consumes as root, and a raw `${VAR}` inside a
+quoted scalar let a value containing `"` and a newline add a service-level key such as `privileged: true`. Accepted
+characters (ASCII only):
+
+| Variable | Accepted |
+|---|---|
+| `STUDIO_AUTH_ENABLED`, `STUDIO_AUTH_REQUIRED` | exactly `true` or `false` (so `True`, `1`, `yes` fail the deploy loudly rather than silently meaning off) |
+| `STUDIO_AUTH_ISSUER`, `STUDIO_AUTH_JWKS_URL` | letters, digits and `. _ ~ : / @ % + = & ? -`, at most 512 characters |
+| `STUDIO_AUTH_ALLOW_SUBS` | digits, commas and spaces, at most 2048 characters |
+| `STUDIO_AUTH_STUDIO_KIDS` | letters, digits and `. _ : - ,` and space, at most 512 characters |
+
+A key id outside that set needs the script's pattern extended together with its test
+(`compose-override-render.test.ts`). `DISCORD_TOKEN` (an org secret) and `HOST_PORT` (a literal in the workflow) are
+interpolated as before: neither is an operator-editable variable.
+
 ## Tool surface: what is reachable, and who may reach it
 
 Every one of the 209 tools sits behind the same gate and the same tier: `studio` users on the numeric-id allowlist.
