@@ -1,5 +1,6 @@
 import { trace } from '@opentelemetry/api';
 import { tryGetCtx } from '../als/context.js';
+import { tryGetPrincipal } from '../als/principal.js';
 import { redactArgs } from '../audit/redact.js';
 import type { AuditEvent } from '../audit/schema.js';
 import type { AuditSink } from '../audit/sink.js';
@@ -78,6 +79,7 @@ export function auditMiddleware(sink: AuditSink): ToolMiddleware {
 
       const requestId = tryGetCtx()?.requestId ?? '';
       const transport = tryGetCtx()?.transport ?? 'stdio';
+      const principal = tryGetPrincipal();
       const argsRedacted = redactArgs(ctx.args, ctx.tool.name);
       const start = performance.now();
 
@@ -102,6 +104,7 @@ export function auditMiddleware(sink: AuditSink): ToolMiddleware {
           status,
           duration_ms: performance.now() - start,
           transport,
+          ...(principal !== undefined ? { principal } : {}),
           ...(result_code !== undefined ? { result_code } : {}),
           ...(trace_id !== undefined ? { trace_id } : {}),
           ...(span_id !== undefined ? { span_id } : {}),

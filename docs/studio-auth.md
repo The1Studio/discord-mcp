@@ -218,10 +218,18 @@ restore the Access app policy. No code change.
    Since REQUIRED needs ENABLED, any process that has Access removed also has the guard.
 6. **Who may operate the bot is undecided** (cutover step 1): `STUDIO_AUTH_ALLOW_SUBS` is a human decision, and
    `MCP_DRY_RUN=false` in production means the allowlist is the only thing between an id and an executed destructive call.
-7. **No per-tool tier, and the studio principal is not in the server's audit records.** The audit sink records tool calls
-   but not who made them; only the gate's `studio auth allow` log line carries `github:<id>`. Threading the principal into
-   the tool middleware is the prerequisite for any stricter tier (the `owners` tier, or a destructive-tools allowlist), and
-   is the only place such a tier can be enforced given `mcp_pipeline`.
+7. **No per-tool tier.** The audit record now names the principal (below), but nothing enforces a stricter tier yet. A
+   destructive-tools allowlist or the `owners` tier has to sit in the tool middleware chain (the only place that sees
+   `mcp_pipeline`'s inner calls), reading the same principal the audit middleware reads. That is a follow-up.
+
+   **Audit attribution (closed here).** When the studio gate admits a request, `startHttp` runs the MCP handling inside
+   `runWithPrincipal("github:<numeric id>")` (`@discord-mcp/core`, `als/principal.ts`), and the audit middleware copies
+   that string into the `AuditEvent` as the optional `principal` field. It is present **only** for a studio-admitted
+   request: stdio, the gate off, the shared secret and Access-fronted requests produce the record they always did, byte
+   for byte (no `principal` key at all, pinned by test), and a refused request is never executed or audited. Inner calls of
+   an `mcp_pipeline` request are audited by the same middleware and carry it too. The field is the numeric id only; no
+   token, assertion or claim is stored (spy-tested with a positive control). The OTLP sink carries it in the log body (the
+   full event); it is not added as a bounded attribute.
 
 ## Vendored verifier
 
@@ -239,5 +247,7 @@ loaded.
 filter): `studio-auth.test.ts` (glue and claim rule), `studio-auth-vendor.test.ts` (hash pin), `http.studio.test.ts` (the
 gate wired into the real transport over loopback sockets), `http.differential.test.ts` (flag-off byte identity against the
 frozen handler in `src/transports/legacy/`, shipped as test code only and never imported by production),
-`studio-auth-config.test.ts` (committed config stays off, the deploy override render, these docs) and
+`studio-auth-config.test.ts` (committed config stays off, the deploy override render, these docs),
+`compose-override-render.test.ts` (the real deploy step with hostile variable values), `http.studio.audit.test.ts` (the audit
+record names the principal; Discord is an in-process fake) and
 `studio-auth.entrypoint.test.ts` (the built `dist/cli.js serve --http` against a local https JWKS with throwaway keys).

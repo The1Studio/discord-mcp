@@ -62,6 +62,7 @@ export {
 } from './access/runtime.js';
 // AsyncLocalStorage
 export { getCtx, runWithCtx, type ToolRequestContext, tryGetCtx } from './als/context.js';
+export { runWithPrincipal, tryGetPrincipal } from './als/principal.js';
 // Audit (Plan 8 Phase E)
 export { redactArgs } from './audit/redact.js';
 export type { AuditEvent } from './audit/schema.js';

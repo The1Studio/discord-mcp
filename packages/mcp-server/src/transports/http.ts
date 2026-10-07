@@ -10,6 +10,7 @@ import {
   FilePayloadApprovalLedger,
   loadConfig,
   PayloadApprovalLedger,
+  runWithPrincipal,
   verifyExpectedBotIdentity,
   wrapRestWithResilience,
 } from '@discord-mcp/core';
@@ -271,6 +272,8 @@ export async function startHttp(options: StartHttpOptions = {}): Promise<Server>
     // call no tool). A refusal is a complete response written BEFORE any MCP handling exists. The exemption
     // skips only THIS gate: the legacy DISCORD_MCP_ACCESS_TOKEN check below still applies to it.
     let studioAuthenticated = false;
+    // Set only when the studio gate admitted the request; it is what the audit record names (never the token).
+    let studioPrincipal: string | undefined;
     if (studio !== null && !isStudioExemptRoute(req.method, pathname)) {
       const decision = await studio.decide(req.headers);
       if (decision.decision === 'refuse') {
@@ -280,6 +283,7 @@ export async function startHttp(options: StartHttpOptions = {}): Promise<Server>
       if (decision.decision === 'allow') {
         // A verified studio bearer is not the shared secret: it replaces that check, it does not add to it.
         studioAuthenticated = true;
+        studioPrincipal = decision.principal;
         studio.logAllow(decision.principal, pathname === '/mcp' ? 'mcp' : 'healthz');
       }
     }
@@ -336,10 +340,13 @@ export async function startHttp(options: StartHttpOptions = {}): Promise<Server>
 
       // The SDK adapter currently buffers the incoming stream without a byte
       // ceiling. Replay only the body we have already bounded above.
-      await handleMcpRequest(
-        body === undefined ? (req as never) : (replayRequest(req, body) as never),
-        res,
-      );
+      const serve = () =>
+        handleMcpRequest(
+          body === undefined ? (req as never) : (replayRequest(req, body) as never),
+          res,
+        );
+      // Flag off, shared-secret and Access-fronted requests have no principal and take the exact legacy call.
+      await (studioPrincipal === undefined ? serve() : runWithPrincipal(studioPrincipal, serve));
     } finally {
       inFlight -= 1;
     }
