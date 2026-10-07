@@ -290,7 +290,7 @@ describe('isStudioExemptRoute: exactly GET /healthz, in the direction a widening
     [undefined, '/healthz', 'no method'],
     ['GET ', '/healthz', 'method with trailing space'],
     ['GET', '/healthz ', 'path with trailing space'],
-  ])('%s %s (%s) is NOT exempt', (method, pathname) => {
+  ])('%s %s (%s) is NOT exempt', (method, pathname, _label) => {
     expect(isStudioExemptRoute(method, pathname)).toBe(false);
   });
 
