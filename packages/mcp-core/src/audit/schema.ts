@@ -28,6 +28,12 @@
  *   - `duration_ms`: wall-clock from middleware enter to next() resolve
  *     or throw, measured via `performance.now()`.
  *   - `transport`: 'stdio' | 'http' (matches ToolRequestContext.transport).
+ *   - `principal`: **optional, present only when the transport authenticated
+ *     the request as an identified principal** (today: the HTTP studio gate,
+ *     `github:<numeric id>`; see als/principal.ts). Absent for stdio, with the
+ *     gate off, and for shared-secret / Access-fronted requests, so an event
+ *     from those paths is byte-identical to one written before the field
+ *     existed. It is an identifier only: never token material or claims.
  *   - `trace_id` / `span_id`: hex strings from
  *     `trace.getActiveSpan()?.spanContext()`. **Undefined when no active
  *     span** (e.g. OTel disabled), per plan §10 critical rule 4.
@@ -43,6 +49,7 @@ export interface AuditEvent {
   readonly result_code?: string;
   readonly duration_ms: number;
   readonly transport: string;
+  readonly principal?: string;
   readonly trace_id?: string;
   readonly span_id?: string;
 }
