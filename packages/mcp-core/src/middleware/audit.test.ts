@@ -7,6 +7,7 @@ import {
 } from '@opentelemetry/sdk-trace-base';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runWithCtx } from '../als/context.js';
+import { runWithPrincipal } from '../als/principal.js';
 import type { AuditEvent } from '../audit/schema.js';
 import type { AuditSink } from '../audit/sink.js';
 import { auditMiddleware } from './audit.js';
@@ -135,6 +136,93 @@ describe('auditMiddleware - mutating tools', () => {
       channel_id: '111',
       token: '[REDACTED:16ch]',
     });
+  });
+});
+
+describe('auditMiddleware - principal', () => {
+  const ok = async () => ({ isError: false, content: [] });
+  const stable = (event: AuditEvent) => {
+    const { timestamp: _t, duration_ms: _d, ...rest } = event;
+    return rest;
+  };
+
+  it('records the principal the transport established, for success, tool_error and thrown alike', async () => {
+    const sink = new CapturingSink();
+    const mw = auditMiddleware(sink);
+    await runWithPrincipal('github:1001', () =>
+      runWithCtx(TEST_REQUEST_CTX, async () => {
+        await mw.onCallTool!(makeCtx(mutatingTool), ok);
+        await mw.onCallTool!(makeCtx(mutatingTool), async () => ({
+          isError: true,
+          content: [],
+          structuredContent: { code: 'discord_not_found' },
+        }));
+        await expect(
+          mw.onCallTool!(makeCtx(mutatingTool), async () => {
+            throw new TypeError('boom');
+          }),
+        ).rejects.toThrow('boom');
+      }),
+    );
+    expect(sink.events.map((e) => [e.status, e.principal])).toEqual([
+      ['success', 'github:1001'],
+      ['tool_error', 'github:1001'],
+      ['thrown', 'github:1001'],
+    ]);
+  });
+
+  it('every inner call of one request carries the principal (the mcp_pipeline shape: several calls, one request)', async () => {
+    const sink = new CapturingSink();
+    const mw = auditMiddleware(sink);
+    await runWithPrincipal('github:1002', () =>
+      runWithCtx(TEST_REQUEST_CTX, async () => {
+        for (let i = 0; i < 3; i += 1) await mw.onCallTool!(makeCtx(mutatingTool), ok);
+      }),
+    );
+    expect(sink.events.map((e) => e.principal)).toEqual(Array(3).fill('github:1002'));
+  });
+
+  it('without a principal the field is ABSENT (not undefined, not empty) and the event keys are exactly the legacy set', async () => {
+    const sink = new CapturingSink();
+    const mw = auditMiddleware(sink);
+    await runWithCtx(TEST_REQUEST_CTX, () => mw.onCallTool!(makeCtx(mutatingTool), ok));
+    const ev = sink.events[0]!;
+    expect(Object.hasOwn(ev, 'principal')).toBe(false);
+    expect('principal' in JSON.parse(JSON.stringify(ev))).toBe(false);
+    // Golden: the serialised key set an audit record had before the field existed (no active span here).
+    expect(Object.keys(ev).sort()).toEqual(
+      [
+        'args_redacted',
+        'category',
+        'duration_ms',
+        'idempotent',
+        'request_id',
+        'status',
+        'timestamp',
+        'tool',
+        'transport',
+      ].sort(),
+    );
+  });
+
+  it('the principal is the ONLY difference an admitted request makes to the record', async () => {
+    const sink = new CapturingSink();
+    const mw = auditMiddleware(sink);
+    await runWithCtx(TEST_REQUEST_CTX, () => mw.onCallTool!(makeCtx(mutatingTool), ok));
+    await runWithPrincipal('github:1001', () =>
+      runWithCtx(TEST_REQUEST_CTX, () => mw.onCallTool!(makeCtx(mutatingTool), ok)),
+    );
+    const [without, withPrincipal] = sink.events.map(stable);
+    expect(withPrincipal).toEqual({ ...without, principal: 'github:1001' });
+  });
+
+  it('is not recorded for a read-only call (nothing is audited, so nothing can leak)', async () => {
+    const sink = new CapturingSink();
+    const mw = auditMiddleware(sink);
+    await runWithPrincipal('github:1001', () =>
+      runWithCtx(TEST_REQUEST_CTX, () => mw.onCallTool!(makeCtx(readonlyTool), ok)),
+    );
+    expect(sink.events).toHaveLength(0);
   });
 });
 

@@ -10,7 +10,6 @@ import {
   FilePayloadApprovalLedger,
   loadConfig,
   PayloadApprovalLedger,
-  runWithPrincipal,
   verifyExpectedBotIdentity,
   wrapRestWithResilience,
 } from '@discord-mcp/core';
@@ -21,16 +20,8 @@ import {
   toNodeHandler,
 } from '@modelcontextprotocol/node';
 import { createMcpHandler } from '@modelcontextprotocol/server';
-import { recordBlueprintActivity } from '../lib/activity.js';
-import type { OtelHandle } from '../otel.js';
-import {
-  createStudioGuard,
-  isStudioExemptRoute,
-  pickStudioAuthEnv,
-  type StudioLogSink,
-  studioBadRequestResponse,
-  studioRefusalResponse,
-} from './studio-auth.js';
+import { recordBlueprintActivity } from '../../lib/activity.js';
+import type { OtelHandle } from '../../otel.js';
 
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 3000;
@@ -109,18 +100,6 @@ function rejectAndClose(
   });
 }
 
-/** Write a complete studio-gate response, then close: an unread request body must not contaminate keep-alive. */
-function writeStudioResponse(
-  req: IncomingMessage,
-  res: ServerResponse,
-  response: { status: number; headers: Record<string, string>; body: string },
-): void {
-  res.writeHead(response.status, { ...response.headers, Connection: 'close' });
-  res.end(response.body, () => {
-    if (!req.destroyed) req.destroy();
-  });
-}
-
 function requestDeclaresBody(req: IncomingMessage): boolean {
   const contentLength = req.headers['content-length'];
   const lengths = Array.isArray(contentLength) ? contentLength : [contentLength];
@@ -150,18 +129,6 @@ export async function startHttp(options: StartHttpOptions = {}): Promise<Server>
   const accessToken = config.DISCORD_MCP_ACCESS_TOKEN;
   const logger = createLogger(config);
 
-  // Dormant studio (GitHub-token) bearer gate. `studio` is null - nothing constructed, nothing loaded -
-  // unless STUDIO_AUTH_ENABLED is exactly "true". A flag-on process with a broken gate must not start and
-  // serve, so prepare() runs before the listener (and before any Discord call) and rejects on bad config.
-  const studioLog: StudioLogSink = (level, message, fields) =>
-    logger[level]({ studioAuth: fields }, message);
-  const studio = createStudioGuard(pickStudioAuthEnv(process.env), {
-    log: studioLog,
-    legacyCredentialOk: (authorization) =>
-      accessToken !== undefined && hasValidBearerToken(authorization, accessToken),
-  });
-  if (studio !== null) await studio.prepare();
-
   // Keep Cockatiel as the single retry owner. Reject queued/pre-emptive 429s
   // so the SDK cannot wait past our 30s operation timeout before Retry-After
   // reaches Cockatiel; `retries: 0` prevents a second retry loop.
@@ -185,7 +152,7 @@ export async function startHttp(options: StartHttpOptions = {}): Promise<Server>
           runtimeIntents: { GUILD_MEMBERS: 'missing', MESSAGE_CONTENT: 'missing' },
         });
   const otel: OtelHandle | null = config.OTEL_ENABLED
-    ? (await import('../otel.js')).startOtel(config)
+    ? (await import('../../otel.js')).startOtel(config)
     : null;
   if (otel !== null) {
     logger.info({ otel: 'enabled' }, 'OpenTelemetry SDK started');
@@ -247,52 +214,14 @@ export async function startHttp(options: StartHttpOptions = {}): Promise<Server>
   let inFlight = 0;
 
   const server = createServer(async (req, res) => {
-    let pathname: string | undefined;
-    if (studio === null) {
-      pathname = req.url === undefined ? undefined : new URL(req.url, 'http://localhost').pathname;
-    } else {
-      // Flag on: a request target the URL parser rejects (`GET //`) is a 400 written before routing and
-      // before the gate, never an unhandled rejection that takes the process down. Flag off keeps the exact
-      // legacy statement above (the differential spec asserts the legacy crash is still there).
-      try {
-        pathname =
-          req.url === undefined ? undefined : new URL(req.url, 'http://localhost').pathname;
-      } catch {
-        writeStudioResponse(req, res, studioBadRequestResponse());
-        return;
-      }
-    }
+    const pathname =
+      req.url === undefined ? undefined : new URL(req.url, 'http://localhost').pathname;
     if (pathname !== '/mcp' && pathname !== '/healthz') {
       res.writeHead(404).end();
       return;
     }
 
-    // Studio gate. Everything routed above is behind it except the literal `GET /healthz` (the deploy
-    // smoke test and the container probe call it with no credential; it answers `{"status":"ok"}` and can
-    // call no tool). A refusal is a complete response written BEFORE any MCP handling exists. The exemption
-    // skips only THIS gate: the legacy DISCORD_MCP_ACCESS_TOKEN check below still applies to it.
-    let studioAuthenticated = false;
-    // Set only when the studio gate admitted the request; it is what the audit record names (never the token).
-    let studioPrincipal: string | undefined;
-    if (studio !== null && !isStudioExemptRoute(req.method, pathname)) {
-      const decision = await studio.decide(req.headers);
-      if (decision.decision === 'refuse') {
-        writeStudioResponse(req, res, studioRefusalResponse(decision, pathname === '/mcp'));
-        return;
-      }
-      if (decision.decision === 'allow') {
-        // A verified studio bearer is not the shared secret: it replaces that check, it does not add to it.
-        studioAuthenticated = true;
-        studioPrincipal = decision.principal;
-        studio.logAllow(decision.principal, pathname === '/mcp' ? 'mcp' : 'healthz');
-      }
-    }
-
-    if (
-      accessToken !== undefined &&
-      !studioAuthenticated &&
-      !hasValidBearerToken(req.headers.authorization, accessToken)
-    ) {
+    if (accessToken !== undefined && !hasValidBearerToken(req.headers.authorization, accessToken)) {
       res.writeHead(401, { 'WWW-Authenticate': 'Bearer' }).end();
       return;
     }
@@ -340,13 +269,10 @@ export async function startHttp(options: StartHttpOptions = {}): Promise<Server>
 
       // The SDK adapter currently buffers the incoming stream without a byte
       // ceiling. Replay only the body we have already bounded above.
-      const serve = () =>
-        handleMcpRequest(
-          body === undefined ? (req as never) : (replayRequest(req, body) as never),
-          res,
-        );
-      // Flag off, shared-secret and Access-fronted requests have no principal and take the exact legacy call.
-      await (studioPrincipal === undefined ? serve() : runWithPrincipal(studioPrincipal, serve));
+      await handleMcpRequest(
+        body === undefined ? (req as never) : (replayRequest(req, body) as never),
+        res,
+      );
     } finally {
       inFlight -= 1;
     }

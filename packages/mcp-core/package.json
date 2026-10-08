@@ -73,7 +73,7 @@
   "devDependencies": {
     "@discord-mcp/server-mocks": "workspace:*",
     "@discordjs/rest": "^2.6.3",
-    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/client": "^2.3.1",
     "@modelcontextprotocol/server": "^2.0.0",
     "@mswjs/interceptors": "^0.42.3",
     "@opentelemetry/context-async-hooks": "^2.11.0",

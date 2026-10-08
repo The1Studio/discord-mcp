@@ -14,7 +14,7 @@ jobs:
     # sv-2), which runs on the deployment host itself (192.168.1.91), so the token
     # goes from the org secret into the compose override without a network hop.
     runs-on: [self-hosted, Linux, X64, sv-2]
-    timeout-minutes: 30
+    timeout-minutes: 20
     env:
       DEPLOY_ROOT: /root/Projects/discord-mcp
       HOST_PORT: '3001'
@@ -45,6 +45,16 @@ jobs:
         # hand-maintained on the box.
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          # Studio (GitHub-token) bearer gate: NON-secret repository variables, unset by default. An unset
+          # variable renders as an empty string, which every flag treats as OFF, so this step is a no-op
+          # until an operator sets them. The override is regenerated on every deploy, which is why the
+          # gate is configured here and not by editing a file on the box. See docs/studio-auth.md.
+          STUDIO_AUTH_ENABLED: ${{ vars.STUDIO_AUTH_ENABLED }}
+          STUDIO_AUTH_REQUIRED: ${{ vars.STUDIO_AUTH_REQUIRED }}
+          STUDIO_AUTH_ISSUER: ${{ vars.STUDIO_AUTH_ISSUER }}
+          STUDIO_AUTH_JWKS_URL: ${{ vars.STUDIO_AUTH_JWKS_URL }}
+          STUDIO_AUTH_ALLOW_SUBS: ${{ vars.STUDIO_AUTH_ALLOW_SUBS }}
+          STUDIO_AUTH_STUDIO_KIDS: ${{ vars.STUDIO_AUTH_STUDIO_KIDS }}
         run: |
           set -euo pipefail
           if [ -z "${DISCORD_TOKEN:-}" ]; then
@@ -52,19 +62,15 @@ jobs:
             exit 1
           fi
           umask 077
-          sudo tee "$DEPLOY_ROOT/docker-compose.override.yml" > /dev/null <<EOF
-          services:
-            discord-mcp:
-              environment:
-                DISCORD_TOKEN: "$DISCORD_TOKEN"
-                # Destructive tools and Components V2 sends execute only when a call ALSO
-                # passes __confirm:true (V2: plus the one-time payload hash + approval id).
-                # With the default (true) every such call returns DRY_RUN_PREVIEW, so V2
-                # cards could never be sent from this deployment.
-                MCP_DRY_RUN: "false"
-              ports:
-                - "${HOST_PORT}:3000"
-          EOF
+          # The renderer lives in the deploy checkout (the previous step just reset it to origin/main) and is
+          # read through sudo because the runner cannot traverse /root. It validates every studio value against
+          # its documented charset and fails this step with an ::error:: before writing anything, so a bad
+          # repository variable cannot add keys to a file that docker compose runs as root. Nothing reaches
+          # the real override until the whole render succeeded.
+          rendered="$(mktemp)"
+          trap 'rm -f "$rendered"' EXIT
+          sudo cat "$DEPLOY_ROOT/.github/scripts/render-compose-override.sh" | bash -s -- "$rendered"
+          sudo tee "$DEPLOY_ROOT/docker-compose.override.yml" > /dev/null < "$rendered"
           # tee keeps an existing file's mode, so an override left at 644 by an
           # earlier hand-written version would stay world-readable.
           sudo chmod 600 "$DEPLOY_ROOT/docker-compose.override.yml"
