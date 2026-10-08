@@ -198,6 +198,13 @@ export const COMPOSER_UPDATE_ACCESS = {
   ),
 } satisfies DiscordAccessRequirement;
 
+
+/** Channel write that also needs Attach Files when the payload carries uploads. */
+export const CHANNEL_WRITE_WITH_ATTACHMENTS_ACCESS = {
+  ...CHANNEL_WRITE_ACCESS,
+  conditions: [{ fields: ['attachments'], permissions: ['ATTACH_FILES'] }],
+} as const satisfies DiscordAccessRequirement;
+
 /** Operations that never contact Discord (builders, validators, and planners). */
 export const LOCAL_ACCESS = {
   auth: 'none',
@@ -443,7 +450,7 @@ const TOOL_REQUIREMENTS: Readonly<Record<string, DiscordAccessRequirement>> = {
   entitlements_delete_test: BOT_APPLICATION_ACCESS,
   // SKU routes do not carry an application_id; the runtime resolver binds the
   // SKU back to `/skus/{id}` before admitting the call.
-  components_v2_send: CHANNEL_WRITE_ACCESS,
+  components_v2_send: CHANNEL_WRITE_WITH_ATTACHMENTS_ACCESS,
   components_v2_edit: CHANNEL_WRITE_ACCESS,
   components_v2_send_from_template: CHANNEL_WRITE_ACCESS,
   guild_get: GUILD_READ_ACCESS,
@@ -543,7 +550,13 @@ const TOOL_REQUIREMENTS: Readonly<Record<string, DiscordAccessRequirement>> = {
   members_unban: guild(['BAN_MEMBERS']),
   messages_bulk_delete: channel(['MANAGE_MESSAGES']),
   messages_delete: channel(['MANAGE_MESSAGES']),
-  messages_send: channel(['VIEW_CHANNEL', 'SEND_MESSAGES']),
+  messages_send: {
+    ...channel(['VIEW_CHANNEL', 'SEND_MESSAGES']),
+    conditions: [{ fields: ['attachments'], permissions: ['ATTACH_FILES'] }],
+  },
+  // Discord only hands out upload URLs; the message that references them needs
+  // the same send permissions, so require them up front.
+  attachments_prepare_upload: channel(['VIEW_CHANNEL', 'SEND_MESSAGES', 'ATTACH_FILES']),
   messages_compose: LOCAL_ACCESS,
   messages_publish: COMPOSER_PUBLISH_ACCESS,
   messages_update: COMPOSER_UPDATE_ACCESS,

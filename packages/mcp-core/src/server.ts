@@ -76,6 +76,7 @@ import ApplicationGetCurrent from './tools/application/get_current.js';
 import ApplicationGetRoleConnectionMetadata from './tools/application/get_role_connection_metadata.js';
 import ApplicationModifyCurrent from './tools/application/modify_current.js';
 import ApplicationModifyRoleConnectionMetadata from './tools/application/modify_role_connection_metadata.js';
+import AttachmentsPrepareUpload from './tools/attachments/prepare_upload.js';
 import AuditLogGet from './tools/audit_log/get.js';
 import AutomodCreateRule from './tools/automod/create_rule.js';
 import AutomodDeleteRule from './tools/automod/delete_rule.js';
@@ -515,7 +516,7 @@ function getToolCategories(toolStore: ToolStore): ReadonlyMap<string, string> {
   return categories;
 }
 
-/** Compile one tool contract on first use instead of all 222 at HTTP startup. */
+/** Compile one tool contract on first use instead of all 223 at HTTP startup. */
 function compileToolContracts(tool: Tool): ToolContractVariants {
   const cached = compiledToolContracts.get(tool);
   if (cached !== undefined) return cached;
@@ -820,6 +821,10 @@ async function createSharedToolStore(): Promise<ToolStore> {
   await toolStore.loadPiece({
     name: 'messages_send',
     piece: MessagesSend as unknown as ConcreteTool,
+  });
+  await toolStore.loadPiece({
+    name: 'attachments_prepare_upload',
+    piece: AttachmentsPrepareUpload as unknown as ConcreteTool,
   });
   await toolStore.loadPiece({
     name: 'messages_read',
@@ -1884,7 +1889,7 @@ export async function buildServer(deps: BuildServerDeps): Promise<BuildServerRes
           'MCP_CATEGORIES; every dispatched call still passes all normal policy gates.',
         ]
       : [
-          'Discord MCP server: 222 tools for Discord operations, Guild Templates, and explicit external inspiration discovery (messages, channels,',
+          'Discord MCP server: 223 tools for Discord operations, Guild Templates, and explicit external inspiration discovery (messages, channels,',
           'threads, members, roles, guild, webhooks, invites, events, commands, reactions,',
           'emojis, stickers, automod, polls, stages, soundboard, voice, onboarding,',
           'monetization, components-v2, intelligence) plus mcp_pipeline for chaining calls and discord_intent_plan for bounded read-only planning.',

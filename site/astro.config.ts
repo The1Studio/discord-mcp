@@ -94,6 +94,7 @@ export default defineConfig({
               collapsed: true,
               items: [
                 'tools/messages',
+                'tools/attachments',
                 'tools/channels',
                 'tools/threads',
                 'tools/reactions',
