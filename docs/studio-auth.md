@@ -13,7 +13,7 @@ in `The1Studio/AIPoweredGameDevelopmentSystem` (PR #137). The two audiences are 
 ## Why this exists
 
 The only credential this transport checks itself is the optional shared `DISCORD_MCP_ACCESS_TOKEN`, and the production
-deploy does not set it: the Cloudflare Access edge is the whole gate. The server exposes 209 Discord tools (bans, channel
+deploy does not set it: the Cloudflare Access edge is the whole gate. The server exposes 210 Discord tools (bans, channel
 and role deletes, message sends) and the production deploy runs with `MCP_DRY_RUN=false`, so a confirmed destructive call
 executes. Removing the Access app without a replacement would leave that reachable by anyone who can reach the tunnel.
 This gate is the replacement, and the cutover blocker it closes.
@@ -149,7 +149,7 @@ interpolated as before: neither is an operator-editable variable.
 
 ## Tool surface: what is reachable, and who may reach it
 
-Every one of the 209 tools sits behind the same gate and the same tier: `studio` users on the numeric-id allowlist.
+Every one of the 210 tools sits behind the same gate and the same tier: `studio` users on the numeric-id allowlist.
 That is the same blast radius Access gives today (any org member) **narrowed** to an explicit list, with empty meaning
 nobody. Decision for this change:
 

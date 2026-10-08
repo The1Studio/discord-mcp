@@ -206,7 +206,7 @@ describe('dual mode (ENABLED, REQUIRED off): the studio bearer is an ADDITIONAL 
     await boot({ ...STUDIO, DISCORD_MCP_ACCESS_TOKEN: ACCESS_TOKEN });
     const reply = await list(bearer(await signer.mint('1001')));
     expect(reply.status).toBe(200);
-    expect(toolCount(reply)).toBe(209);
+    expect(toolCount(reply)).toBe(210);
     expect(dispatch.count).toBe(1); // positive control for every zero below
   });
 
@@ -218,7 +218,7 @@ describe('dual mode (ENABLED, REQUIRED off): the studio bearer is an ADDITIONAL 
     const client = new Client({ name: 'studio-wired', version: '0.0.0' });
     await client.connect(transport as never);
     try {
-      expect((await client.listTools()).tools).toHaveLength(209);
+      expect((await client.listTools()).tools).toHaveLength(210);
     } finally {
       await client.close();
     }
