@@ -40,7 +40,7 @@ export default defineTool({
   },
   outputSchema: {
     threads: z.array(
-      z.object({
+      z.looseObject({
         applied_tags: ChannelTagOutput.applied_tags,
         id: ChannelId,
         name: z.string(),
