@@ -26,7 +26,7 @@ export default defineTool({
   },
   outputSchema: {
     channels: z.array(
-      z.object({
+      z.looseObject({
         ...ChannelTagOutput,
         id: ChannelId,
         name: z.string(),
