@@ -548,6 +548,9 @@ export function assessComponentsV2Payload(
   const riskFlags: string[] = [];
   if (toolName === 'components_v2_edit') riskFlags.push('edit_existing_message');
   if (args.allowed_mentions !== undefined) riskFlags.push('allowed_mentions');
+  if (Array.isArray(args.attachments) && args.attachments.length > 0) {
+    riskFlags.push('attachments');
+  }
   if (state.externalUrl) riskFlags.push('external_urls');
   if (state.interactive) riskFlags.push('interactive_components');
   if (components.length >= 32 || reviewComponentsV2(components).totalNodes >= 32) {

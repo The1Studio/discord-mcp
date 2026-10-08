@@ -4,7 +4,7 @@
  * Reads the static `__toolMetadata` attached to every class returned by
  * `defineTool()` (see packages/mcp-core/src/tools/_lib/defineTool.ts) via
  * dynamic `import()` of each tool source file. Renders one MDX page per
- * tool, one index per category, and a top-level tools index - 209 + 31 + 1
+ * tool, one index per category, and a top-level tools index - 210 + 32 + 1
  * pages total.
  *
  * Run via `pnpm --filter site generate-tools`. Requires `tsx` to register
@@ -120,7 +120,7 @@ export async function loadAllTools(toolsDir: string = TOOLS_DIR): Promise<ToolMe
 
 /**
  * Tool descriptions follow the established 4-section format used across the
- * 209 tools. Headings are bold-asterisk markdown - capture body text up to
+ * 210 tools. Headings are bold-asterisk markdown - capture body text up to
  * the next bold-asterisk heading or end of string.
  */
 export function parseDescription(desc: string): {
@@ -1224,8 +1224,16 @@ export function renderToolsIndex(byCategory: Map<string, ToolMetadata[]>): strin
   const domains = [
     {
       title: 'Messaging',
-      description: 'Messages, channels, threads, reactions, polls, and webhooks.',
-      categories: ['messages', 'channels', 'threads', 'reactions', 'polls', 'webhooks'],
+      description: 'Messages, file attachments, channels, threads, reactions, polls, and webhooks.',
+      categories: [
+        'messages',
+        'attachments',
+        'channels',
+        'threads',
+        'reactions',
+        'polls',
+        'webhooks',
+      ],
     },
     {
       title: 'Moderation',

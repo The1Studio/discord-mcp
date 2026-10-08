@@ -210,7 +210,7 @@ describeReal('the built dist/cli.js, gate on, against a local https JWKS', () =>
         `Bearer ${await signer.mint('1001', { login: 'entrypoint-secret-login' })}`,
       );
       expect(good.status).toBe(200);
-      expect(toolCount(good.body)).toBe(209);
+      expect(toolCount(good.body)).toBe(210);
 
       expect((await post(run.port)).status).toBe(200); // Access would still be the gate at the edge
 

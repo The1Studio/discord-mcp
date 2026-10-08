@@ -74,7 +74,7 @@ const routes: RouteAudit[] = [
   {
     name: 'homepage',
     path: '/',
-    expectedText: ['Connect your AI to Discord', 'Get a verified result', '209 tools'],
+    expectedText: ['Connect your AI to Discord', 'Get a verified result', '210 tools'],
   },
   {
     name: 'first verified outcome journey',
