@@ -3,6 +3,7 @@ import { REST } from '@discordjs/rest';
 import { container } from '@sapphire/pieces';
 import { HttpResponse, http } from 'msw';
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import channelsListActiveThreadsGuild from './list_active_threads_guild.js';
 import '../../container.js';
 
@@ -21,6 +22,16 @@ describe('channels_list_active_threads_guild', () => {
               type: 11,
               parent_id: '111122223333444401',
               owner_id: '537711014240270104',
+              thread_metadata: { archived: false, locked: false },
+            },
+            {
+              id: '999000999000999302',
+              name: 'forum post',
+              type: 11,
+              parent_id: '111122223333444402',
+              owner_id: '537711014240270104',
+              applied_tags: ['111122223333444499'],
+              available_tags: [],
               thread_metadata: { archived: false, locked: false },
             },
           ],
@@ -47,8 +58,18 @@ describe('channels_list_active_threads_guild', () => {
       structuredContent: { count: number; threads: Array<{ id: string }> };
     };
     expect(r.isError).toBe(false);
-    expect(r.structuredContent.count).toBe(1);
+    expect(r.structuredContent.count).toBe(2);
     expect(r.structuredContent.threads[0]!.id).toBe('999000999000999301');
     expect(r.content[0]!.text).toContain('untrusted_discord_message');
+  });
+
+  it('publishes an item schema that tolerates extra properties (#27)', () => {
+    const schema = z.toJSONSchema(
+      z.looseObject(channelsListActiveThreadsGuild.__toolMetadata.outputSchema!),
+      {
+        target: 'draft-2020-12',
+      },
+    ) as { properties: { threads: { items: { additionalProperties?: unknown } } } };
+    expect(schema.properties.threads.items.additionalProperties).not.toBe(false);
   });
 });

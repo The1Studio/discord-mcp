@@ -14,7 +14,7 @@ jobs:
     # sv-2), which runs on the deployment host itself (192.168.1.91), so the token
     # goes from the org secret into the compose override without a network hop.
     runs-on: [self-hosted, Linux, X64, sv-2]
-    timeout-minutes: 30
+    timeout-minutes: 20
     env:
       DEPLOY_ROOT: /root/Projects/discord-mcp
       HOST_PORT: '3001'
