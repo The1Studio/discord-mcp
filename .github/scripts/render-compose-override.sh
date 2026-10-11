@@ -2,8 +2,8 @@
 # Render the gitignored docker-compose.override.yml that the deploy workflow hands to `docker compose up`
 # (run as root on the deploy host). Usage: render-compose-override.sh <output-file>
 #
-# Inputs (environment): DISCORD_TOKEN (required), HOST_PORT (required), and the six NON-secret repository
-# variables STUDIO_AUTH_{ENABLED,REQUIRED,ISSUER,JWKS_URL,ALLOW_SUBS,STUDIO_KIDS} (unset or empty = the
+# Inputs (environment): DISCORD_TOKEN (required), HOST_PORT (required), and the seven NON-secret repository
+# variables STUDIO_AUTH_{ENABLED,REQUIRED,ISSUER,JWKS_URL,ALLOW_SUBS,ALLOW_ALL_AUDIENCE_MEMBERS,STUDIO_KIDS} (unset or empty = the
 # gate is off, and the file renders exactly as it did before they existed).
 #
 # Why this is a script and not an inline heredoc: the studio values are operator-editable repository variables,
@@ -44,6 +44,7 @@ STUDIO_AUTH_REQUIRED="${STUDIO_AUTH_REQUIRED:-}"
 STUDIO_AUTH_ISSUER="${STUDIO_AUTH_ISSUER:-}"
 STUDIO_AUTH_JWKS_URL="${STUDIO_AUTH_JWKS_URL:-}"
 STUDIO_AUTH_ALLOW_SUBS="${STUDIO_AUTH_ALLOW_SUBS:-}"
+STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS="${STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS:-}"
 STUDIO_AUTH_STUDIO_KIDS="${STUDIO_AUTH_STUDIO_KIDS:-}"
 
 url_chars='^[A-Za-z0-9._~:/@%+=&?-]+$'
@@ -51,6 +52,7 @@ check STUDIO_AUTH_ENABLED "$STUDIO_AUTH_ENABLED" '^(true|false)$' 5 'exactly "tr
 check STUDIO_AUTH_REQUIRED "$STUDIO_AUTH_REQUIRED" '^(true|false)$' 5 'exactly "true" or "false" (or unset)'
 check STUDIO_AUTH_ISSUER "$STUDIO_AUTH_ISSUER" "$url_chars" 512 'a URL of letters, digits and . _ ~ : / @ % + = & ? -'
 check STUDIO_AUTH_JWKS_URL "$STUDIO_AUTH_JWKS_URL" "$url_chars" 512 'a URL of letters, digits and . _ ~ : / @ % + = & ? -'
+check STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS "$STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS" '^(true|false)$' 5 'exactly "true" or "false" (or unset)'
 check STUDIO_AUTH_ALLOW_SUBS "$STUDIO_AUTH_ALLOW_SUBS" '^[0-9, ]+$' 2048 'comma-separated numeric GitHub ids (digits, commas and spaces only)'
 check STUDIO_AUTH_STUDIO_KIDS "$STUDIO_AUTH_STUDIO_KIDS" '^[A-Za-z0-9._:, -]+$' 512 'comma-separated key ids (letters, digits and . _ : - , space only)'
 
@@ -69,6 +71,7 @@ services:
       STUDIO_AUTH_ISSUER: "$STUDIO_AUTH_ISSUER"
       STUDIO_AUTH_JWKS_URL: "$STUDIO_AUTH_JWKS_URL"
       STUDIO_AUTH_ALLOW_SUBS: "$STUDIO_AUTH_ALLOW_SUBS"
+      STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS: "$STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS"
       STUDIO_AUTH_STUDIO_KIDS: "$STUDIO_AUTH_STUDIO_KIDS"
     ports:
       - "${HOST_PORT}:3000"

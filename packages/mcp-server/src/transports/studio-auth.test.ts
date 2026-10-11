@@ -672,6 +672,86 @@ describe('studioGate: a claimed studio credential', () => {
     }
   });
 
+  describe('STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS: an explicit opt-in, exact "true" only', () => {
+    const optIn = (extra: Partial<StudioAuthEnv> = {}): StudioAuthEnv => {
+      const env: StudioAuthEnv = {
+        ...ENABLED_ENV,
+        STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS: 'true',
+        ...extra,
+      };
+      delete env.STUDIO_AUTH_ALLOW_SUBS;
+      return { ...env, ...extra };
+    };
+
+    it('default (unset) is OFF: a perfect assertion is 403 not_allowed', async () => {
+      resetStudioAuthState();
+      const env: StudioAuthEnv = { ...ENABLED_ENV };
+      delete env.STUDIO_AUTH_ALLOW_SUBS;
+      expectRefusal(
+        await studioGate(bearer(await signer.mint('1001')), env, deps()),
+        403,
+        'not_allowed',
+      );
+    });
+
+    it.each([
+      ['TRUE'],
+      ['True'],
+      ['1'],
+      [' true'],
+      ['true '],
+      ['yes'],
+      ['false'],
+      [''],
+    ])('near-miss %j keeps it OFF (403 not_allowed)', async (raw) => {
+      resetStudioAuthState();
+      const env = optIn({ STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS: raw });
+      expectRefusal(
+        await studioGate(bearer(await signer.mint('1001')), env, deps()),
+        403,
+        'not_allowed',
+      );
+    });
+
+    it('exact "true" with an empty list serves a valid assertion, and every other refusal still holds', async () => {
+      resetStudioAuthState();
+      const env = optIn();
+      expect((await studioGate(bearer(await signer.mint('777001')), env, deps())).decision).toBe(
+        'allow',
+      );
+      const bad: Array<[Record<string, unknown>, number, string]> = [
+        [{ aud: 'knowledge-retrieval' }, 401, 'wrong_aud'],
+        [{ tier: 'owners' }, 403, 'wrong_tier'],
+        [{ exp: Math.floor(Date.now() / 1000) - 3600 }, 401, 'expired'],
+        [{ iss: 'https://evil.example' }, 401, 'wrong_iss'],
+      ];
+      for (const [claims, status, code] of bad) {
+        expectRefusal(
+          await studioGate(bearer(await signer.mint('777001', claims)), env, deps()),
+          status,
+          code,
+        );
+      }
+    });
+
+    it('a non-empty ALLOW_SUBS wins over the opt-in: an id off the list is 403 not_allowed', async () => {
+      resetStudioAuthState();
+      const env: StudioAuthEnv = {
+        ...ENABLED_ENV,
+        STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS: 'true',
+        STUDIO_AUTH_ALLOW_SUBS: '1001',
+      };
+      expect((await studioGate(bearer(await signer.mint('1001')), env, deps())).decision).toBe(
+        'allow',
+      );
+      expectRefusal(
+        await studioGate(bearer(await signer.mint('2002')), env, deps()),
+        403,
+        'not_allowed',
+      );
+    });
+  });
+
   it('JWKS down and never fetched fails closed with 503 jwks_unavailable', async () => {
     jwks.restore();
     jwks = stubJwksFetch(TEST_JWKS_URL, () => ({ status: 500 }));

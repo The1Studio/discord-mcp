@@ -337,6 +337,186 @@ describe('dual mode (ENABLED, REQUIRED off): the studio bearer is an ADDITIONAL 
   });
 });
 
+/** The environment the committed deploy defaults render: ENABLED + issuer + JWKS, no REQUIRED, no allowlist. */
+const COMMITTED_DEFAULTS = {
+  STUDIO_AUTH_ENABLED: 'true',
+  STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS: 'true',
+  STUDIO_AUTH_ISSUER: TEST_ISSUER,
+  STUDIO_AUTH_JWKS_URL: TEST_JWKS_URL,
+};
+
+describe('committed deploy shape (ENABLED, no REQUIRED, no allowlist): the audience claim is the access decision', () => {
+  it('a valid assertion for this audience is served; wrong audience, issuer, expiry, signature and tier are not', async () => {
+    await boot(COMMITTED_DEFAULTS);
+    const ok = await list(bearer(await signer.mint('777001')));
+    expect(ok.status).toBe(200);
+    expect(toolCount(ok)).toBe(210);
+    expect(dispatch.count).toBe(1); // positive control for every zero below
+    const refused: Array<[string, () => Promise<string>, number, string]> = [
+      [
+        'wrong audience',
+        () => signer.mint('777001', { aud: 'knowledge-retrieval' }),
+        401,
+        'wrong_aud',
+      ],
+      [
+        'wrong issuer',
+        () => signer.mint('777001', { iss: 'https://evil.example' }),
+        401,
+        'wrong_iss',
+      ],
+      [
+        'expired',
+        () => signer.mint('777001', { exp: Math.floor(Date.now() / 1000) - 3600 }),
+        401,
+        'expired',
+      ],
+      [
+        'unknown key',
+        () => signer.mint('777001', {}, { kid: 'nobody-signed-this' }),
+        401,
+        'bad_sig',
+      ],
+      ['owners tier', () => signer.mint('777001', { tier: 'owners' }), 403, 'wrong_tier'],
+    ];
+    for (const [name, mint, status, code] of refused) {
+      const reply = await list(bearer(await mint()));
+      expect({ name, status, code: JSON.parse(reply.body).error.data.code }).toEqual({
+        name,
+        status,
+        code,
+      });
+    }
+    expect(dispatch.count).toBe(1);
+  });
+
+  it('a tampered payload (signature no longer matches) is refused', async () => {
+    await boot(COMMITTED_DEFAULTS);
+    const [h, , s] = (await signer.mint('777001')).split('.');
+    const swapped = Buffer.from(JSON.stringify({ sub: '777002' })).toString('base64url');
+    const reply = await list(bearer(`${h}.${swapped}.${s}`));
+    expect(reply.status).toBe(401);
+    expect(dispatch.count).toBe(0);
+  });
+});
+
+describe('without the opt-in the empty allowlist still admits nobody', () => {
+  it.each([
+    [undefined],
+    ['TRUE'],
+    ['1'],
+    [' true'],
+    [''],
+  ])('opt-in %j: a perfect assertion is 403 not_allowed, never dispatched', async (raw) => {
+    await boot({ ...COMMITTED_DEFAULTS, STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS: raw });
+    const reply = await list(bearer(await signer.mint('777001')));
+    expect(reply.status).toBe(403);
+    expect(JSON.parse(reply.body).error.data.code).toBe('not_allowed');
+    expect(dispatch.count).toBe(0);
+  });
+
+  it('an explicit list wins over the opt-in at the transport', async () => {
+    await boot({ ...COMMITTED_DEFAULTS, STUDIO_AUTH_ALLOW_SUBS: '1001' });
+    expect((await list(bearer(await signer.mint('1001')))).status).toBe(200);
+    expect((await list(bearer(await signer.mint('777001')))).status).toBe(403);
+  });
+});
+
+describe('JWKS unreachable with the gate ON: the service starts and the legacy path is exactly what it was', () => {
+  type Outage = [string, () => void];
+  const outages: Outage[] = [
+    [
+      'HTTP 500',
+      () => {
+        jwks.restore();
+        jwks = stubJwksFetch(TEST_JWKS_URL, () => ({ status: 500 }));
+      },
+    ],
+    [
+      'DNS failure (fetch rejects)',
+      () => {
+        jwks.restore();
+        const original = globalThis.fetch;
+        globalThis.fetch = (async (input: unknown, init?: unknown) => {
+          if (String(input) === TEST_JWKS_URL) throw new TypeError('fetch failed: ENOTFOUND');
+          return original(input as never, init as never);
+        }) as typeof fetch;
+        jwks = {
+          jwksFetches: () => 0,
+          restore: () => {
+            globalThis.fetch = original;
+          },
+        };
+      },
+    ],
+    [
+      'timeout (the request never answers until aborted)',
+      () => {
+        jwks.restore();
+        const original = globalThis.fetch;
+        globalThis.fetch = ((input: unknown, init?: { signal?: AbortSignal }) => {
+          if (String(input) !== TEST_JWKS_URL) return original(input as never, init as never);
+          return new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+          });
+        }) as typeof fetch;
+        jwks = {
+          jwksFetches: () => 0,
+          restore: () => {
+            globalThis.fetch = original;
+          },
+        };
+      },
+    ],
+  ];
+
+  it.each(outages)(
+    '%s',
+    async (_name, breakJwks) => {
+      breakJwks();
+      // Startup makes no network call: the process comes up with the JWKS down.
+      await boot({ ...COMMITTED_DEFAULTS, DISCORD_MCP_ACCESS_TOKEN: ACCESS_TOKEN });
+
+      // Legacy credentials: byte-for-byte the pre-switch behaviour, and never a JWKS fetch.
+      expect(
+        (
+          await send({
+            method: 'GET',
+            path: '/healthz',
+            headers: { authorization: bearer(ACCESS_TOKEN) },
+          })
+        ).status,
+      ).toBe(200);
+      expect((await list(bearer(ACCESS_TOKEN))).status).toBe(200);
+      const none = await list();
+      expect(none.status).toBe(401);
+      expect(none.headers['www-authenticate']).toBe('Bearer');
+      expect(none.body).toBe('');
+      const wrong = await list(bearer('wrong-opaque-token-000000000000000000'));
+      expect(wrong.status).toBe(401);
+      expect(wrong.headers['www-authenticate']).toBe('Bearer');
+      expect(wrong.body).toBe('');
+      expect(dispatch.count).toBe(1); // only the correct shared secret was dispatched
+
+      // A claimed assertion cannot be verified: fail closed 503, never a pass, never a fall back to legacy.
+      const reply = await list(bearer(await signer.mint('777001')));
+      expect(reply.status).toBe(503);
+      expect(reply.headers['retry-after']).toBe('30');
+      expect(JSON.parse(reply.body).error.data.code).toBe('jwks_unavailable');
+      expect(dispatch.count).toBe(1);
+    },
+    20_000,
+  );
+
+  it('with no shared secret set the legacy open path is unchanged while the JWKS is down', async () => {
+    jwks.restore();
+    jwks = stubJwksFetch(TEST_JWKS_URL, () => ({ status: 500 }));
+    await boot(COMMITTED_DEFAULTS);
+    expect((await list()).status).toBe(200);
+    expect(jwks.jwksFetches()).toBe(0);
+  });
+});
+
 describe('REQUIRED: the open fall-through is closed', () => {
   it('no credential is 401 studio_credential_required, a complete JSON response, before any dispatch', async () => {
     await boot(REQUIRED);

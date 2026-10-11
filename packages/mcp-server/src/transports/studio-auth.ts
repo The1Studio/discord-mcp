@@ -69,6 +69,7 @@ export interface StudioAuthEnv {
   STUDIO_AUTH_JWKS_URL?: string;
   STUDIO_AUTH_AUDIENCE?: string;
   STUDIO_AUTH_ALLOW_SUBS?: string;
+  STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS?: string;
   STUDIO_AUTH_STUDIO_KIDS?: string;
 }
 
@@ -80,6 +81,7 @@ export const STUDIO_AUTH_ENV_KEYS = [
   'STUDIO_AUTH_JWKS_URL',
   'STUDIO_AUTH_AUDIENCE',
   'STUDIO_AUTH_ALLOW_SUBS',
+  'STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS',
   'STUDIO_AUTH_STUDIO_KIDS',
 ] as const;
 
@@ -108,6 +110,14 @@ export function studioAuthEnabled(raw: unknown): boolean {
 
 /** Whether a request with no studio credential is refused. Strictly the exact string "true". */
 export function studioAuthRequired(raw: unknown): boolean {
+  return raw === 'true';
+}
+
+/**
+ * Whether every holder of a valid `discord-mcp` audience claim is admitted when no id list is set. Strictly the
+ * exact string "true": "TRUE", "1", " true" and empty are all OFF. It never overrides a non-empty allowlist.
+ */
+export function studioAuthAllowAllAudienceMembers(raw: unknown): boolean {
   return raw === 'true';
 }
 
@@ -148,6 +158,8 @@ export interface StudioAuthConfig {
   jwksUrl: string;
   audience: typeof STUDIO_AUDIENCE;
   allowSubs: string[];
+  /** True only when the opt-in is "true" AND the id list is empty: the issuer's audience grant alone decides. */
+  audienceOnly: boolean;
   studioKids: string[];
 }
 
@@ -180,11 +192,15 @@ export function readStudioAuthConfig(
   const issuer = trimmedString(e.STUDIO_AUTH_ISSUER);
   const jwksUrl = trimmedString(e.STUDIO_AUTH_JWKS_URL);
   if (issuer === null || jwksUrl === null) return null;
+  const allowSubs = uniqueSorted(parseAllowSubs(e.STUDIO_AUTH_ALLOW_SUBS));
   return {
     issuer,
     jwksUrl,
     audience: STUDIO_AUDIENCE,
-    allowSubs: uniqueSorted(parseAllowSubs(e.STUDIO_AUTH_ALLOW_SUBS)),
+    allowSubs,
+    audienceOnly:
+      allowSubs.length === 0 &&
+      studioAuthAllowAllAudienceMembers(e.STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS),
     studioKids: uniqueSorted(splitList(e.STUDIO_AUTH_STUDIO_KIDS, 'STUDIO_AUTH_STUDIO_KIDS')),
   };
 }
@@ -262,6 +278,7 @@ const verifierKey = (config: StudioAuthConfig): string =>
     config.jwksUrl,
     config.audience,
     config.allowSubs,
+    config.audienceOnly,
     config.studioKids,
   ]);
 
@@ -275,7 +292,9 @@ function verifierFor(mod: VerifierModule, config: StudioAuthConfig): Verifier {
     audience: config.audience,
     tiers: ['studio'],
     kinds: ['user'],
-    allowSubs: config.allowSubs,
+    // `allowSubs: []` allows NOBODY. Only the explicit opt-in leaves it undefined (no id narrowing), so the
+    // issuer's audience grant decides; a non-empty list always wins.
+    ...(config.audienceOnly ? {} : { allowSubs: config.allowSubs }),
     ...(config.studioKids.length > 0
       ? {
           kidTiers: Object.fromEntries(config.studioKids.map((kid) => [kid, 'studio' as const])),
@@ -585,7 +604,13 @@ export class StudioGuard {
       allowed: config.allowSubs.length,
       required,
     });
-    if (config.allowSubs.length === 0) {
+    if (config.audienceOnly) {
+      this.deps.log?.(
+        'info',
+        'STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS=true: the audience claim alone decides who may call',
+      );
+    }
+    if (config.allowSubs.length === 0 && !config.audienceOnly) {
       this.deps.log?.('warn', 'STUDIO_AUTH_ALLOW_SUBS is empty: nobody can use the studio path');
     }
   }

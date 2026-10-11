@@ -1,6 +1,7 @@
 /**
- * Config and wiring guards for the dormant studio gate: that nothing COMMITTED turns it on, that the deploy
- * override really renders "off" when the repository variables are unset (and passes them through when set),
+ * Config and wiring guards for the studio gate: that the ONLY committed place that turns it on is the deploy
+ * workflow's defaults (REQUIRED is never committed on), that the deploy override renders those defaults as an
+ * ENABLED gate with the studio-auth issuer (and passes repository variables through when set),
  * that the docs name every variable and every refusal code, that this suite is actually run by CI, and that
  * the frozen oracle cannot reach production.
  *
@@ -16,6 +17,7 @@ import { parse } from 'yaml';
 import {
   createStudioGuard,
   pickStudioAuthEnv,
+  readStudioAuthConfig,
   STUDIO_AUTH_ENV_KEYS,
   STUDIO_REFUSAL_CODES,
 } from './studio-auth.js';
@@ -38,7 +40,16 @@ const DEPLOY = read('.github/workflows/deploy.yml');
 /** Non-comment lines of a text file (a `# STUDIO_AUTH_ENABLED: "true"` hint in a comment is not configuration). */
 const codeLines = (text: string) => text.split('\n').filter((line) => !/^\s*#/.test(line));
 
-describe('committed config ships the gate OFF', () => {
+/** The studio-auth issuer origin and JWKS the committed deploy defaults must name (SSOT: studio-auth apps/api/deployments.json). */
+const ISSUER_DEFAULT = 'https://auth-api.the1studio.org';
+const JWKS_DEFAULT = 'https://auth-api.the1studio.org/.well-known/jwks.json';
+
+const enabledTrueLines = (text: string) =>
+  codeLines(text).filter((line) => /STUDIO_AUTH_ENABLED\b[^\n]*\btrue\b/.test(line));
+const requiredTrueLines = (text: string) =>
+  codeLines(text).filter((line) => /STUDIO_AUTH_REQUIRED\b[^\n]*\btrue\b/.test(line));
+
+describe('committed config: the deploy workflow default is the ONE place the gate is ON; REQUIRED is never on', () => {
   const committed = [
     'docker-compose.yml',
     'docker-compose.override.example.yml',
@@ -48,23 +59,46 @@ describe('committed config ships the gate OFF', () => {
     'packages/mcp-server/package.json',
     ...readdirSync(join(REPO, '.github/workflows')).map((f) => `.github/workflows/${f}`),
   ];
+  const DEPLOY_FILE = '.github/workflows/deploy.yml';
+
+  it.each(
+    committed.filter((f) => f !== DEPLOY_FILE),
+  )('%s does not set STUDIO_AUTH_ENABLED to true (only the deploy workflow default does)', (file) => {
+    expect(enabledTrueLines(read(file))).toEqual([]);
+  });
 
   it.each(
     committed,
-  )('%s does not set STUDIO_AUTH_ENABLED or STUDIO_AUTH_REQUIRED to true', (file) => {
-    const offending = codeLines(read(file)).filter((line) =>
-      /STUDIO_AUTH_(ENABLED|REQUIRED)\b[^\n]*\btrue\b/.test(line),
-    );
-    expect(offending).toEqual([]);
+  )('%s does not set STUDIO_AUTH_REQUIRED to true (legacy path stays ON: phase M is not here)', (file) => {
+    expect(requiredTrueLines(read(file))).toEqual([]);
+  });
+
+  it('the deploy workflow commits exactly ONE ENABLED default, and it is true', () => {
+    // Both directions: a second line, or the default silently flipping back to dark, turns this red.
+    expect(enabledTrueLines(DEPLOY)).toEqual([
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: a GitHub Actions expression, not a JS template
+      "          STUDIO_AUTH_ENABLED: ${{ vars.STUDIO_AUTH_ENABLED || 'true' }}",
+    ]);
+  });
+
+  it('the opt-in default is pinned by exact value: ONE line in deploy.yml, true, and in no other committed file', () => {
+    const optIn = (text: string) =>
+      codeLines(text).filter((line) =>
+        /STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS\b[^\n]*\btrue\b/.test(line),
+      );
+    expect(optIn(DEPLOY)).toEqual([
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: a GitHub Actions expression, not a JS template
+      "          STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS: ${{ vars.STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS || 'true' }}",
+    ]);
+    for (const file of committed.filter((f) => f !== DEPLOY_FILE)) {
+      expect(optIn(read(file)), file).toEqual([]);
+    }
   });
 
   it('the scan can fail: a committed `STUDIO_AUTH_ENABLED: "true"` is caught, a commented hint is not', () => {
-    const flagged = (text: string) =>
-      codeLines(text).filter((line) => /STUDIO_AUTH_(ENABLED|REQUIRED)\b[^\n]*\btrue\b/.test(line))
-        .length;
-    expect(flagged('      STUDIO_AUTH_ENABLED: "true"\n')).toBe(1);
-    expect(flagged('ENV STUDIO_AUTH_REQUIRED=true\n')).toBe(1);
-    expect(flagged('      # STUDIO_AUTH_ENABLED: "true"\n')).toBe(0);
+    expect(enabledTrueLines('      STUDIO_AUTH_ENABLED: "true"\n')).toHaveLength(1);
+    expect(requiredTrueLines('ENV STUDIO_AUTH_REQUIRED=true\n')).toHaveLength(1);
+    expect(enabledTrueLines('      # STUDIO_AUTH_ENABLED: "true"\n')).toHaveLength(0);
   });
 
   it('the example file names every variable (commented) and sets none', () => {
@@ -87,15 +121,37 @@ describe('the deploy override', () => {
   const writeStep = steps.find((s) => s.name?.startsWith('Write docker-compose.override.yml'));
   const SETTABLE = STUDIO_AUTH_ENV_KEYS.filter((k) => k !== 'STUDIO_AUTH_AUDIENCE');
 
-  it('passes each settable variable from a repository VARIABLE (never a secret), under the same name', () => {
+  // Committed defaults by IDENTITY: a variable of the same name overrides each one; everything else passes through bare.
+  const DEFAULTS: Record<string, string | undefined> = {
+    STUDIO_AUTH_ENABLED: 'true',
+    STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS: 'true',
+    STUDIO_AUTH_ISSUER: ISSUER_DEFAULT,
+    STUDIO_AUTH_JWKS_URL: JWKS_DEFAULT,
+  };
+  const expression = (key: string) =>
+    DEFAULTS[key] === undefined
+      ? `\${{ vars.${key} }}`
+      : `\${{ vars.${key} || '${DEFAULTS[key]}' }}`;
+
+  it('passes each settable variable from a repository VARIABLE (never a secret), with exactly the committed defaults', () => {
     expect(writeStep?.env).toBeDefined();
     for (const key of SETTABLE) {
-      expect(writeStep?.env?.[key], key).toBe(`\${{ vars.${key} }}`);
+      expect(writeStep?.env?.[key], key).toBe(expression(key));
     }
     expect(Object.values(writeStep?.env ?? {}).filter((v) => /secrets\./.test(v))).toEqual([
       // biome-ignore lint/suspicious/noTemplateCurlyInString: a GitHub Actions expression, not a JS template
       '${{ secrets.DISCORD_TOKEN }}',
     ]);
+  });
+
+  it('REQUIRED, ALLOW_SUBS and STUDIO_KIDS carry NO committed default (dual mode, no committed narrowing)', () => {
+    for (const key of [
+      'STUDIO_AUTH_REQUIRED',
+      'STUDIO_AUTH_ALLOW_SUBS',
+      'STUDIO_AUTH_STUDIO_KIDS',
+    ]) {
+      expect(writeStep?.env?.[key], key).not.toContain('||');
+    }
   });
 
   it('never passes the audience (it is pinned in code)', () => {
@@ -119,7 +175,7 @@ describe('the deploy override', () => {
   const bash = process.platform === 'win32' ? it.skip : it;
 
   bash(
-    'with every repository variable unset the override still renders and leaves the gate OFF',
+    'the renderer alone, with no input at all, still renders and leaves the gate OFF (the defaults live in the workflow)',
     () => {
       const { status, stderr, override } = render({});
       expect({ status, stderr }).toEqual({ status: 0, stderr: '' });
@@ -129,6 +185,31 @@ describe('the deploy override', () => {
       for (const key of SETTABLE) expect(environment[key], key).toBe('');
       expect(parse(override).services['discord-mcp'].ports).toEqual(['3001:3000']);
       expect(createStudioGuard(pickStudioAuthEnv(environment))).toBeNull();
+    },
+  );
+
+  bash(
+    'the committed defaults (what an unset repository variable expands to) render an ENABLED, not-required gate for the studio-auth issuer',
+    () => {
+      const values = Object.fromEntries(
+        Object.entries(DEFAULTS).filter(([, v]) => v !== undefined),
+      ) as Record<string, string>;
+      const { status, stderr, override } = render(values);
+      expect({ status, stderr }).toEqual({ status: 0, stderr: '' });
+      const environment = environmentOf(override);
+      expect(environment.STUDIO_AUTH_ENABLED).toBe('true');
+      expect(environment.STUDIO_AUTH_REQUIRED).toBe('');
+      expect(environment.STUDIO_AUTH_ALLOW_SUBS).toBe('');
+      expect(environment.STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS).toBe('true');
+      const guard = createStudioGuard(pickStudioAuthEnv(environment));
+      expect(guard).not.toBeNull();
+      expect(readStudioAuthConfig(pickStudioAuthEnv(environment))).toMatchObject({
+        issuer: ISSUER_DEFAULT,
+        jwksUrl: JWKS_DEFAULT,
+        audience: 'discord-mcp',
+        allowSubs: [],
+        audienceOnly: true,
+      });
     },
   );
 

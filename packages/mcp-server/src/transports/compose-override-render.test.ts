@@ -46,6 +46,7 @@ const GOLDEN_UNSET = `services:
       STUDIO_AUTH_ISSUER: ""
       STUDIO_AUTH_JWKS_URL: ""
       STUDIO_AUTH_ALLOW_SUBS: ""
+      STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS: ""
       STUDIO_AUTH_STUDIO_KIDS: ""
     ports:
       - "3001:3000"
