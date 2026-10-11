@@ -35,7 +35,8 @@ Other variables (read once at startup):
 |---|---|
 | `STUDIO_AUTH_ISSUER` | Required when enabled: the studio-auth Worker's `iss`. |
 | `STUDIO_AUTH_JWKS_URL` | Required when enabled, **https only** (the verifier refuses http). |
-| `STUDIO_AUTH_ALLOW_SUBS` | Optional extra narrowing: comma-separated **numeric GitHub ids**. Empty or unset = **no extra narrowing**: who may use the service is decided by the `discord-mcp` audience claim, i.e. a GitHub team permission on `The1Studio/discord-mcp` in studio-auth (`policy/audience-access.json`), never by this repo. When set, an id off the list is `403 not_allowed` even with a valid assertion. Any malformed entry (a login, an email, `github:123`) makes startup fail. |
+| `STUDIO_AUTH_ALLOW_SUBS` | Comma-separated **numeric GitHub ids**. Empty or unset = **nobody** (unless the opt-in below). Any malformed entry (a login, an email, `github:123`) makes startup fail. A non-empty list always wins over the opt-in. |
+| `STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS` | Explicit opt-in, **exactly the string `true`** (`TRUE`, `1`, ` true`, empty are off). With `ALLOW_SUBS` empty it leaves the id check out, so the issuer's `discord-mcp` audience claim (a GitHub team permission on `The1Studio/discord-mcp` in studio-auth, never decided in this repo) is the access decision. Every other check (signature, issuer, audience, expiry, tier, kind) is unchanged. The deploy workflow defaults it to `true`; set the repository variable to `false` and re-run the deploy to turn it off (back to nobody). |
 | `STUDIO_AUTH_STUDIO_KIDS` | Optional: pin signing key ids to the `studio` tier. |
 | `STUDIO_AUTH_AUDIENCE` | Do not set. The audience is **pinned in code** to `discord-mcp` (`STUDIO_AUDIENCE`); setting any other value fails startup. |
 
@@ -127,9 +128,15 @@ tests `GET /healthz` and one `POST /mcp` call.
 
 The override is **regenerated on every deploy**, so a value edited on the box would be lost. The studio variables are
 therefore passed through from non-secret repository **variables** (`vars.STUDIO_AUTH_*`) into that override, with
-committed defaults for the three that make the gate work: `ENABLED` = `true`, `ISSUER` = `https://auth-api.the1studio.org`,
+committed defaults for the four that make the gate work: `ENABLED` = `true`, `ALLOW_ALL_AUDIENCE_MEMBERS` = `true`, `ISSUER` = `https://auth-api.the1studio.org`,
 `JWKS_URL` = `https://auth-api.the1studio.org/.well-known/jwks.json`. `REQUIRED`, `ALLOW_SUBS` and `STUDIO_KIDS` have no
-default (empty). A repository variable of the same name overrides its default (rollback without a code change:
+default (empty).
+
+**Who can call, plainly.** Production runs `MCP_DRY_RUN=false`, so a confirmed destructive call (bans, channel and role
+deletes, sends) executes live. With the opt-in on, the **audience grant is the only gate**: anyone holding push on
+`The1Studio/discord-mcp` through a team can operate the bot. The Access edge still fronts the public hostname until it is
+removed. To close it, set repository variable `STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS=false` (nobody) or list ids in
+`STUDIO_AUTH_ALLOW_SUBS`. A repository variable of the same name overrides its default (rollback without a code change:
 `STUDIO_AUTH_ENABLED=false`, re-run the deploy). The rendered override is asserted in `studio-auth-config.test.ts`;
 with the JWKS endpoint unreachable the service still starts and every legacy request behaves as before
 (`http.studio.test.ts`, "JWKS unreachable with the gate ON").

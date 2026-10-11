@@ -81,6 +81,20 @@ describe('committed config: the deploy workflow default is the ONE place the gat
     ]);
   });
 
+  it('the opt-in default is pinned by exact value: ONE line in deploy.yml, true, and in no other committed file', () => {
+    const optIn = (text: string) =>
+      codeLines(text).filter((line) =>
+        /STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS\b[^\n]*\btrue\b/.test(line),
+      );
+    expect(optIn(DEPLOY)).toEqual([
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: a GitHub Actions expression, not a JS template
+      "          STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS: ${{ vars.STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS || 'true' }}",
+    ]);
+    for (const file of committed.filter((f) => f !== DEPLOY_FILE)) {
+      expect(optIn(read(file)), file).toEqual([]);
+    }
+  });
+
   it('the scan can fail: a committed `STUDIO_AUTH_ENABLED: "true"` is caught, a commented hint is not', () => {
     expect(enabledTrueLines('      STUDIO_AUTH_ENABLED: "true"\n')).toHaveLength(1);
     expect(requiredTrueLines('ENV STUDIO_AUTH_REQUIRED=true\n')).toHaveLength(1);
@@ -110,6 +124,7 @@ describe('the deploy override', () => {
   // Committed defaults by IDENTITY: a variable of the same name overrides each one; everything else passes through bare.
   const DEFAULTS: Record<string, string | undefined> = {
     STUDIO_AUTH_ENABLED: 'true',
+    STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS: 'true',
     STUDIO_AUTH_ISSUER: ISSUER_DEFAULT,
     STUDIO_AUTH_JWKS_URL: JWKS_DEFAULT,
   };
@@ -185,6 +200,7 @@ describe('the deploy override', () => {
       expect(environment.STUDIO_AUTH_ENABLED).toBe('true');
       expect(environment.STUDIO_AUTH_REQUIRED).toBe('');
       expect(environment.STUDIO_AUTH_ALLOW_SUBS).toBe('');
+      expect(environment.STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS).toBe('true');
       const guard = createStudioGuard(pickStudioAuthEnv(environment));
       expect(guard).not.toBeNull();
       expect(readStudioAuthConfig(pickStudioAuthEnv(environment))).toMatchObject({
@@ -192,6 +208,7 @@ describe('the deploy override', () => {
         jwksUrl: JWKS_DEFAULT,
         audience: 'discord-mcp',
         allowSubs: [],
+        audienceOnly: true,
       });
     },
   );

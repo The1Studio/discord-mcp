@@ -15,7 +15,8 @@ services:
       # STUDIO_AUTH_REQUIRED: "true"            # only with ENABLED; refuses requests with no studio credential
       # STUDIO_AUTH_ISSUER: "https://auth.example"
       # STUDIO_AUTH_JWKS_URL: "https://auth.example/.well-known/jwks.json"   # https only
-      # STUDIO_AUTH_ALLOW_SUBS: "1001,1002"     # optional extra narrowing (numeric GitHub ids); empty = the audience claim decides
+      # STUDIO_AUTH_ALLOW_SUBS: "1001,1002"     # numeric GitHub ids; empty = nobody (unless the opt-in below)
+      # STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS: "true"   # opt-in, exact "true" only: with ALLOW_SUBS empty, the audience grant decides
       # STUDIO_AUTH_STUDIO_KIDS: ""             # optional: pin signing kids to the studio tier
       # STUDIO_AUTH_AUDIENCE: ""                # do not set: pinned to discord-mcp in code
     ports:

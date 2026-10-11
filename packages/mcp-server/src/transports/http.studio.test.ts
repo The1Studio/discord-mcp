@@ -340,6 +340,7 @@ describe('dual mode (ENABLED, REQUIRED off): the studio bearer is an ADDITIONAL 
 /** The environment the committed deploy defaults render: ENABLED + issuer + JWKS, no REQUIRED, no allowlist. */
 const COMMITTED_DEFAULTS = {
   STUDIO_AUTH_ENABLED: 'true',
+  STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS: 'true',
   STUDIO_AUTH_ISSUER: TEST_ISSUER,
   STUDIO_AUTH_JWKS_URL: TEST_JWKS_URL,
 };
@@ -396,6 +397,28 @@ describe('committed deploy shape (ENABLED, no REQUIRED, no allowlist): the audie
     const reply = await list(bearer(`${h}.${swapped}.${s}`));
     expect(reply.status).toBe(401);
     expect(dispatch.count).toBe(0);
+  });
+});
+
+describe('without the opt-in the empty allowlist still admits nobody', () => {
+  it.each([
+    [undefined],
+    ['TRUE'],
+    ['1'],
+    [' true'],
+    [''],
+  ])('opt-in %j: a perfect assertion is 403 not_allowed, never dispatched', async (raw) => {
+    await boot({ ...COMMITTED_DEFAULTS, STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS: raw });
+    const reply = await list(bearer(await signer.mint('777001')));
+    expect(reply.status).toBe(403);
+    expect(JSON.parse(reply.body).error.data.code).toBe('not_allowed');
+    expect(dispatch.count).toBe(0);
+  });
+
+  it('an explicit list wins over the opt-in at the transport', async () => {
+    await boot({ ...COMMITTED_DEFAULTS, STUDIO_AUTH_ALLOW_SUBS: '1001' });
+    expect((await list(bearer(await signer.mint('1001')))).status).toBe(200);
+    expect((await list(bearer(await signer.mint('777001')))).status).toBe(403);
   });
 });
 
