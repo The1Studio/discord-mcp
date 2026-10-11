@@ -1,7 +1,8 @@
-# Studio auth for the discord-mcp HTTP transport (dormant)
+# Studio auth for the discord-mcp HTTP transport
 
-A GitHub-token ("studio auth") login in front of the Streamable HTTP endpoint, **off by default and byte-identical to the
-previous behaviour while off**. Code: `packages/mcp-server/src/transports/studio-auth.ts`, wired in
+A studio-auth assertion login in front of the Streamable HTTP endpoint. **The deploy workflow turns it ON by default
+(dual mode: `STUDIO_AUTH_REQUIRED` is not set, so every legacy credential and the Access edge keep working exactly as
+before); with the flag off the transport is byte-identical to the previous behaviour.** Code: `packages/mcp-server/src/transports/studio-auth.ts`, wired in
 `packages/mcp-server/src/transports/http.ts`. The verifier is the vendored
 `packages/mcp-server/src/transports/vendor/studio-auth-verify.mjs` (pinned, hash-checked). Design:
 `plans/261005-zt-github-auth/central-auth-design.md` in `The1Studio/theonekit-core`.
@@ -20,7 +21,8 @@ This gate is the replacement, and the cutover blocker it closes.
 
 ## What it is
 
-Two flags, both **exactly the string `true`** (` true`, `True`, `1`, `yes` are off). Committed config sets neither.
+Two flags, both **exactly the string `true`** (` true`, `True`, `1`, `yes` are off). The deploy workflow commits `STUDIO_AUTH_ENABLED` ON (as the default of the repository variable of the same name; set the
+variable to `false` to switch the gate off without a code change). Nothing committed ever sets `REQUIRED`.
 
 | Flag | Meaning |
 |---|---|
@@ -33,7 +35,7 @@ Other variables (read once at startup):
 |---|---|
 | `STUDIO_AUTH_ISSUER` | Required when enabled: the studio-auth Worker's `iss`. |
 | `STUDIO_AUTH_JWKS_URL` | Required when enabled, **https only** (the verifier refuses http). |
-| `STUDIO_AUTH_ALLOW_SUBS` | Comma-separated **numeric GitHub ids**. Empty or unset = **nobody**. Any malformed entry (a login, an email, `github:123`) makes startup fail. |
+| `STUDIO_AUTH_ALLOW_SUBS` | Optional extra narrowing: comma-separated **numeric GitHub ids**. Empty or unset = **no extra narrowing**: who may use the service is decided by the `discord-mcp` audience claim, i.e. a GitHub team permission on `The1Studio/discord-mcp` in studio-auth (`policy/audience-access.json`), never by this repo. When set, an id off the list is `403 not_allowed` even with a valid assertion. Any malformed entry (a login, an email, `github:123`) makes startup fail. |
 | `STUDIO_AUTH_STUDIO_KIDS` | Optional: pin signing key ids to the `studio` tier. |
 | `STUDIO_AUTH_AUDIENCE` | Do not set. The audience is **pinned in code** to `discord-mcp` (`STUDIO_AUDIENCE`); setting any other value fails startup. |
 
@@ -124,10 +126,13 @@ repository `Dockerfile`, which copies all of `packages/mcp-server`, so the vendo
 tests `GET /healthz` and one `POST /mcp` call.
 
 The override is **regenerated on every deploy**, so a value edited on the box would be lost. The studio variables are
-therefore passed through from non-secret repository **variables** (`vars.STUDIO_AUTH_*`) into that override. Unset
-variables render as empty strings, which every flag treats as off, so **a merge changes no behaviour** (differential-proven,
-and the rendered override is asserted in `studio-auth-config.test.ts`). Enabling is setting repository variables and
-re-running the deploy, never a code change.
+therefore passed through from non-secret repository **variables** (`vars.STUDIO_AUTH_*`) into that override, with
+committed defaults for the three that make the gate work: `ENABLED` = `true`, `ISSUER` = `https://auth-api.the1studio.org`,
+`JWKS_URL` = `https://auth-api.the1studio.org/.well-known/jwks.json`. `REQUIRED`, `ALLOW_SUBS` and `STUDIO_KIDS` have no
+default (empty). A repository variable of the same name overrides its default (rollback without a code change:
+`STUDIO_AUTH_ENABLED=false`, re-run the deploy). The rendered override is asserted in `studio-auth-config.test.ts`;
+with the JWKS endpoint unreachable the service still starts and every legacy request behaves as before
+(`http.studio.test.ts`, "JWKS unreachable with the gate ON").
 
 The override is written by `.github/scripts/render-compose-override.sh`, not by an inline heredoc, and **every studio value is
 checked against its documented charset before anything is written**. A value outside it fails the deploy step with an

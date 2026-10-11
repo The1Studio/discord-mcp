@@ -128,7 +128,7 @@ function splitList(raw: unknown, name: string): string[] {
 /**
  * Parse `STUDIO_AUTH_ALLOW_SUBS`: comma-separated NUMERIC GitHub ids, kept as strings (never through Number).
  *
- * Empty or absent is `[]`, which allows NOBODY. A malformed entry (a login, an email, a typo) THROWS: dropping
+ * Empty or absent is `[]`: no extra narrowing (the audience claim decides). A malformed entry (a login, an email, a typo) THROWS: dropping
  * it would quietly turn a typo into a smaller list that still looks configured.
  */
 export function parseAllowSubs(raw: unknown): string[] {
@@ -275,7 +275,9 @@ function verifierFor(mod: VerifierModule, config: StudioAuthConfig): Verifier {
     audience: config.audience,
     tiers: ['studio'],
     kinds: ['user'],
-    allowSubs: config.allowSubs,
+    // Empty = no extra id narrowing: the audience claim is the access decision (a GitHub team permission on
+    // the audience's marker repo, enforced by the issuer). A non-empty list only NARROWS further.
+    ...(config.allowSubs.length > 0 ? { allowSubs: config.allowSubs } : {}),
     ...(config.studioKids.length > 0
       ? {
           kidTiers: Object.fromEntries(config.studioKids.map((kid) => [kid, 'studio' as const])),
@@ -586,7 +588,10 @@ export class StudioGuard {
       required,
     });
     if (config.allowSubs.length === 0) {
-      this.deps.log?.('warn', 'STUDIO_AUTH_ALLOW_SUBS is empty: nobody can use the studio path');
+      this.deps.log?.(
+        'info',
+        'STUDIO_AUTH_ALLOW_SUBS is empty: admission is decided by the audience claim alone',
+      );
     }
   }
 

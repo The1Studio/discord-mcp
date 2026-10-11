@@ -45,14 +45,17 @@ jobs:
         # hand-maintained on the box.
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
-          # Studio (GitHub-token) bearer gate: NON-secret repository variables, unset by default. An unset
-          # variable renders as an empty string, which every flag treats as OFF, so this step is a no-op
-          # until an operator sets them. The override is regenerated on every deploy, which is why the
-          # gate is configured here and not by editing a file on the box. See docs/studio-auth.md.
-          STUDIO_AUTH_ENABLED: ${{ vars.STUDIO_AUTH_ENABLED }}
+          # Studio-auth (assertion) gate, ON by default. The committed values below are the defaults; a repository
+          # variable of the same name still overrides each one (set STUDIO_AUTH_ENABLED=false to switch the gate
+          # off without a code change). REQUIRED stays unset (dual mode: the legacy path keeps serving), and
+          # ALLOW_SUBS / STUDIO_KIDS stay optional narrowing. Admission is decided by the audience claim
+          # (`discord-mcp`, pinned in code), i.e. a GitHub team permission on this repo in studio-auth, never here.
+          # The override is regenerated on every deploy, which is why the gate is configured here and not by
+          # editing a file on the box. See docs/studio-auth.md.
+          STUDIO_AUTH_ENABLED: ${{ vars.STUDIO_AUTH_ENABLED || 'true' }}
           STUDIO_AUTH_REQUIRED: ${{ vars.STUDIO_AUTH_REQUIRED }}
-          STUDIO_AUTH_ISSUER: ${{ vars.STUDIO_AUTH_ISSUER }}
-          STUDIO_AUTH_JWKS_URL: ${{ vars.STUDIO_AUTH_JWKS_URL }}
+          STUDIO_AUTH_ISSUER: ${{ vars.STUDIO_AUTH_ISSUER || 'https://auth-api.the1studio.org' }}
+          STUDIO_AUTH_JWKS_URL: ${{ vars.STUDIO_AUTH_JWKS_URL || 'https://auth-api.the1studio.org/.well-known/jwks.json' }}
           STUDIO_AUTH_ALLOW_SUBS: ${{ vars.STUDIO_AUTH_ALLOW_SUBS }}
           STUDIO_AUTH_STUDIO_KIDS: ${{ vars.STUDIO_AUTH_STUDIO_KIDS }}
         run: |

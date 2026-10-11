@@ -165,7 +165,7 @@ describe('createStudioGuard', () => {
   });
 });
 
-describe('allowlist parsing: numeric ids only, empty means nobody, malformed fails closed', () => {
+describe('allowlist parsing: numeric ids only, empty means no extra narrowing, malformed fails closed', () => {
   it('empty, absent and whitespace-only are the empty list', () => {
     expect(parseAllowSubs(undefined)).toEqual([]);
     expect(parseAllowSubs(null)).toEqual([]);
@@ -661,15 +661,41 @@ describe('studioGate: a claimed studio credential', () => {
     );
   });
 
-  it('an empty allowlist admits NOBODY, even with an otherwise perfect assertion', async () => {
+  it('an empty allowlist adds NO narrowing: the audience decides, and everything else is still refused', async () => {
     const token = await signer.mint('1001');
     for (const raw of [undefined, '', ' , ']) {
       resetStudioAuthState();
       const env: StudioAuthEnv = { ...ENABLED_ENV };
       if (raw === undefined) delete env.STUDIO_AUTH_ALLOW_SUBS;
       else env.STUDIO_AUTH_ALLOW_SUBS = raw;
-      expectRefusal(await studioGate(bearer(token), env, deps()), 403, 'not_allowed');
+      const allowed = await studioGate(bearer(token), env, deps());
+      expect(allowed.decision, JSON.stringify(raw)).toBe('allow');
+      // Identity-based counterpart: none of the other refusals is loosened by the empty list.
+      for (const [claims, status, code] of [
+        [{ aud: 'knowledge-retrieval' }, 401, 'wrong_aud'],
+        [{ tier: 'owners' }, 403, 'wrong_tier'],
+        [{ exp: Math.floor(Date.now() / 1000) - 3600 }, 401, 'expired'],
+        [{ iss: 'https://evil.example' }, 401, 'wrong_iss'],
+      ] as const) {
+        expectRefusal(
+          await studioGate(bearer(await signer.mint('1001', claims)), env, deps()),
+          status,
+          code,
+        );
+      }
     }
+  });
+
+  it('a NON-empty allowlist still narrows: an id off the list is 403 not_allowed even with a perfect assertion', async () => {
+    const env: StudioAuthEnv = { ...ENABLED_ENV, STUDIO_AUTH_ALLOW_SUBS: '1001' };
+    expect((await studioGate(bearer(await signer.mint('1001')), env, deps())).decision).toBe(
+      'allow',
+    );
+    expectRefusal(
+      await studioGate(bearer(await signer.mint('2002')), env, deps()),
+      403,
+      'not_allowed',
+    );
   });
 
   it('JWKS down and never fetched fails closed with 503 jwks_unavailable', async () => {
@@ -1088,9 +1114,12 @@ describe('StudioGuard.prepare: fail fast at startup, no network', () => {
     });
   });
 
-  it('warns loudly when the allowlist is empty (nobody can use the studio path)', async () => {
+  it('says so (info, not a warning) when the allowlist is empty: the audience claim alone decides', async () => {
     await guard({ ...ENABLED_ENV, STUDIO_AUTH_ALLOW_SUBS: '' }).prepare();
-    expect(logs.some((l) => l.level === 'warn' && /nobody/.test(l.message))).toBe(true);
+    expect(logs.some((l) => l.level === 'info' && /audience claim alone/.test(l.message))).toBe(
+      true,
+    );
+    expect(logs.some((l) => l.level === 'warn')).toBe(false);
   });
 
   it.each([
