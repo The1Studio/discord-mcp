@@ -250,17 +250,15 @@ describe('the deploy override', () => {
     }
   });
 
-  it('BLOCKER 1 is pinned both ways: the identity smoke sends no credential exactly while the docs say so', () => {
+  it('BLOCKER 1 is closed: the identity smoke is REQUIRED-aware and the docs no longer list it as open', () => {
     const smoke = steps.find((s) => s.name?.startsWith('Smoke test - the secret authenticates'));
     expect(smoke?.run, 'the identity smoke step was renamed or removed').toBeDefined();
-    const smokeSendsCredential = /authorization/i.test(smoke?.run ?? '');
-    const docListsBlocker = DOC.includes('The deploy smoke test sends no credential');
-    expect(
-      docListsBlocker,
-      smokeSendsCredential
-        ? 'the smoke now sends a credential: delete blocker 1 from docs/studio-auth.md (invert, do not re-pin)'
-        : 'the smoke still sends no credential: docs/studio-auth.md must list it as a cutover blocker',
-    ).toBe(!smokeSendsCredential);
+    // Behaviour is proven in deploy-smoke.test.ts; this only keeps the docs and the step in step.
+    expect(smoke?.run).toContain('STUDIO_AUTH_REQUIRED');
+    expect(smoke?.run).toContain('studio_credential_required');
+    expect(DOC, 'blocker 1 is closed: do not list the smoke as open again').not.toContain(
+      'The deploy smoke test sends no credential',
+    );
   });
 
   it('the readiness smoke only calls GET /healthz, the one exempt route', () => {

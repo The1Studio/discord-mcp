@@ -193,9 +193,17 @@ nobody. Decision for this change:
    helper from core. Core owns this (`install-discord-mcp.sh` and the **two** `discord-mcp` entries in `t1k-config-core.json`
    must flip together). Through the public hostname this can only be proven after step 6, because the Access app rejects a
    non-Access bearer at the edge (not verified by this change).
-5. **REQUIRED.** Set `STUDIO_AUTH_REQUIRED=true`, re-run the deploy, and confirm no credential now answers 401
-   `studio_credential_required` over loopback. Do this only after blockers 1 to 3 are closed, and only once step 4 is
-   complete: clients still on Access OAuth are refused from this moment.
+5. **REQUIRED.** The exact flip is the repository variable `STUDIO_AUTH_REQUIRED=true` on `The1Studio/discord-mcp`
+   (`gh variable set STUDIO_AUTH_REQUIRED --body true --repo The1Studio/discord-mcp`); `.github/workflows/deploy.yml`
+   already reads it (`vars.STUDIO_AUTH_REQUIRED`) and `render-compose-override.sh` writes it into the container, so
+   no file changes. Re-run the `deploy` workflow. The deploy's own smoke step then proves the gate: it expects an
+   anonymous `POST /mcp` to be refused `401 studio_credential_required` (any other answer fails the deploy) and
+   checks the bot token directly against Discord, because the loopback `users_get_current` call it normally makes has
+   no credential in this mode. Confirm the same by hand over loopback. Do this only after blockers 1 to 3 are closed,
+   and only once step 4 is complete: clients still on Access OAuth are refused from this moment. Access identity is
+   NOT a credential here: this process never reads `Cf-Access-Jwt-Assertion`, so a client that authenticates only
+   through the Access edge (OAuth login, or a service token) is refused until it sends a studio bearer or
+   `DISCORD_MCP_ACCESS_TOKEN`. Rollback: delete the variable (or set it to `false`) and re-run the deploy.
 6. **Remove the Access app LAST.** The app `Mcp` also fronts `mcp.the1studio.org`; remove or bypass it only when both
    origins are on REQUIRED (this one and PR #137 for knowledge-retrieval), in one announced change window.
 7. **Verify** a logged-in member passes, a non-member (403), a 2FA-off member (no assertion is minted) and an expired
@@ -206,13 +214,13 @@ restore the Access app policy. No code change.
 
 ## Cutover blockers (found by this change, none closed by it)
 
-1. **The deploy smoke test sends no credential.** The `Smoke test - the secret authenticates against Discord` step POSTs
-   `tools/call users_get_current` to `/mcp` with no `Authorization`. With `STUDIO_AUTH_REQUIRED=true` every deploy's
-   smoke step goes red after the restart (the readiness step on `GET /healthz` is unaffected). The only credential
-   REQUIRED admits besides a studio assertion is the correct `DISCORD_MCP_ACCESS_TOKEN`, which needs a new repository
-   secret, a line in the generated override and an `Authorization` header on that `curl`. A new secret is a human step, so it is
-   not done here. `studio-auth-config.test.ts` pins this blocker both ways: if the smoke ever sends a credential, the test
-   fails until this item is removed.
+1. **Closed: the deploy smoke step is REQUIRED-aware.** The `Smoke test - the secret authenticates against Discord` step used
+   to POST `tools/call users_get_current` to `/mcp` with no `Authorization`, so with `STUDIO_AUTH_REQUIRED=true` every
+   deploy would have gone red after the restart. With the variable `true` it now expects that anonymous call to be
+   refused `401 studio_credential_required` (anything else fails the deploy: the gate is not live) and checks the bot
+   token directly against Discord; with it unset or `false` it is unchanged. `deploy-smoke.test.ts` runs the real step
+   against fake servers in both modes. No new secret was needed, so `DISCORD_MCP_ACCESS_TOKEN` stays unset and the
+   legacy bearer path stays available only if an operator deliberately configures it.
 2. **The override is regenerated per deploy**, so the flags only reach the container through `deploy.yml`. This change
    adds the pass-through of `vars.STUDIO_AUTH_*` (default empty = off). Setting a repository variable is the live switch.
 3. **Access rejects the assertion at the edge.** While the `Mcp` app fronts the hostname, a request carrying only a studio
