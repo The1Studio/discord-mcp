@@ -1,5 +1,7 @@
 /**
- * The deploy's post-restart smoke step, run for real against fake servers, in both gate modes.
+ * The deploy's post-restart smoke step: the REAL step text from deploy.yml, run against fake servers that
+ * emulate each gate mode. The real gate over loopback sockets is covered by http.studio.test.ts; this file pins
+ * the step's own logic (what it accepts, what it fails on, and the message it fails with).
  *
  * Why it exists: with STUDIO_AUTH_REQUIRED=true the container refuses every request that carries no credential,
  * and the old step sent exactly that (an anonymous `POST /mcp`, `curl -f`), so the first deploy after the flip went
@@ -76,12 +78,32 @@ async function mcpServer(
   });
 }
 
-/** Stands in for https://discord.com/api/v10. */
-async function discordServer(ok: boolean, seen: Seen): Promise<string> {
+type DiscordMode =
+  | 'ok'
+  | 'reject'
+  | 'not-a-bot'
+  | 'bot-without-id'
+  | 'bot-empty-id'
+  | 'bot-numeric-id'
+  | 'bot-as-string'
+  | 'not-json';
+
+const DISCORD_BODIES: Record<Exclude<DiscordMode, 'reject'>, string> = {
+  ok: '{"id":"1","bot":true}',
+  'not-a-bot': '{"id":"1","bot":false}',
+  'bot-without-id': '{"bot":true}',
+  'bot-empty-id': '{"id":"","bot":true}',
+  'bot-numeric-id': '{"id":1,"bot":true}',
+  'bot-as-string': '{"id":"1","bot":"true"}',
+  'not-json': 'ok "bot": true',
+};
+
+/** Stands in for https://discord.com/api/v10. `reject` is a real 401; every other mode answers 200 with a body. */
+async function discordServer(mode: DiscordMode, seen: Seen): Promise<string> {
   const port = await listen((req, res) => {
     seen.discordAuthorization.push(req.headers.authorization);
-    if (ok && req.url === '/users/@me') {
-      res.writeHead(200, { 'content-type': 'application/json' }).end('{"id":"1","bot":true}');
+    if (mode !== 'reject' && req.url === '/users/@me') {
+      res.writeHead(200, { 'content-type': 'application/json' }).end(DISCORD_BODIES[mode]);
     } else {
       res
         .writeHead(401, { 'content-type': 'application/json' })
@@ -91,13 +113,31 @@ async function discordServer(ok: boolean, seen: Seen): Promise<string> {
   return `http://127.0.0.1:${port}`;
 }
 
+/** The step as it was before this change (010b926), verbatim apart from the scratch path. Positive control only. */
+const PRE_CHANGE_STEP = `set -euo pipefail
+out="$(mktemp)"
+trap 'rm -f "$out"' EXIT
+curl -fsS -X POST "http://127.0.0.1:\${HOST_PORT}/mcp" \\
+  -H 'content-type: application/json' \\
+  -H 'accept: application/json, text/event-stream' \\
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"users_get_current","arguments":{}}}' \\
+  -o "$out"
+grep -q '"bot":true' "$out"
+if grep -q '"isError":true' "$out"; then
+  echo "::error::users_get_current failed against Discord"
+  cat "$out"
+  exit 1
+fi
+echo " ✓ bot identity confirmed"
+`;
+
 const seenNone = (): Seen => ({ mcpAuthorization: [], discordAuthorization: [] });
 
 describe.skipIf(IS_WINDOWS)('deploy smoke step, STUDIO_AUTH_REQUIRED=true', () => {
   it('passes when the app refuses an anonymous caller and the bot token is good, and sends the token to Discord once, as a Bot credential', async () => {
     const seen = seenNone();
     const port = await mcpServer('refuse', seen);
-    const discord = await discordServer(true, seen);
+    const discord = await discordServer('ok', seen);
     const r = await runSmokeStep({
       HOST_PORT: String(port),
       STUDIO_AUTH_REQUIRED: 'true',
@@ -114,7 +154,7 @@ describe.skipIf(IS_WINDOWS)('deploy smoke step, STUDIO_AUTH_REQUIRED=true', () =
   it('accepts a bare token (no "Bot " prefix) and still sends exactly one Bot credential', async () => {
     const seen = seenNone();
     const port = await mcpServer('refuse', seen);
-    const discord = await discordServer(true, seen);
+    const discord = await discordServer('ok', seen);
     const r = await runSmokeStep({
       HOST_PORT: String(port),
       STUDIO_AUTH_REQUIRED: 'true',
@@ -128,7 +168,7 @@ describe.skipIf(IS_WINDOWS)('deploy smoke step, STUDIO_AUTH_REQUIRED=true', () =
   it('FAILS when an anonymous caller is NOT refused: the flag is set but the gate is not live', async () => {
     const seen = seenNone();
     const port = await mcpServer('open', seen);
-    const discord = await discordServer(true, seen);
+    const discord = await discordServer('ok', seen);
     const r = await runSmokeStep({
       HOST_PORT: String(port),
       STUDIO_AUTH_REQUIRED: 'true',
@@ -143,7 +183,7 @@ describe.skipIf(IS_WINDOWS)('deploy smoke step, STUDIO_AUTH_REQUIRED=true', () =
   it('FAILS on a bare 401 that is not the app gate (no studio_credential_required code)', async () => {
     const seen = seenNone();
     const port = await mcpServer('bare-401', seen);
-    const discord = await discordServer(true, seen);
+    const discord = await discordServer('ok', seen);
     const r = await runSmokeStep({
       HOST_PORT: String(port),
       STUDIO_AUTH_REQUIRED: 'true',
@@ -154,10 +194,10 @@ describe.skipIf(IS_WINDOWS)('deploy smoke step, STUDIO_AUTH_REQUIRED=true', () =
     expect(r.stdout + r.stderr).toContain('the gate is not refusing anonymous callers');
   });
 
-  it('FAILS when Discord rejects the token, even though the gate refuses anonymous callers', async () => {
+  it('FAILS when Discord rejects the token (a 401 dies inside curl, before the identity guard)', async () => {
     const seen = seenNone();
     const port = await mcpServer('refuse', seen);
-    const discord = await discordServer(false, seen);
+    const discord = await discordServer('reject', seen);
     const r = await runSmokeStep({
       HOST_PORT: String(port),
       STUDIO_AUTH_REQUIRED: 'true',
@@ -165,12 +205,63 @@ describe.skipIf(IS_WINDOWS)('deploy smoke step, STUDIO_AUTH_REQUIRED=true', () =
       DISCORD_API_BASE: discord,
     });
     expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('401');
+    expect(r.stdout).not.toContain('bot identity confirmed');
+  });
+
+  // These answer 200, so curl succeeds and the failure can only come from the identity guard itself. Each asserts on
+  // the guard's own message: a mutation of the guard to `true` leaves the step green, which these cases catch.
+  const IDENTITY_FAILURES: [DiscordMode, string][] = [
+    ['not-a-bot', 'bot:false'],
+    ['bot-without-id', 'bot:true but no id'],
+    ['bot-empty-id', 'bot:true but an empty id'],
+    ['bot-numeric-id', 'bot:true but a non-string id'],
+    ['bot-as-string', 'bot as the string "true"'],
+    ['not-json', 'a body that is not JSON but contains the old grep marker'],
+  ];
+  for (const [mode, what] of IDENTITY_FAILURES) {
+    it(`FAILS at the identity guard when Discord answers 200 with ${what}`, async () => {
+      const seen = seenNone();
+      const port = await mcpServer('refuse', seen);
+      const discord = await discordServer(mode, seen);
+      const r = await runSmokeStep({
+        HOST_PORT: String(port),
+        STUDIO_AUTH_REQUIRED: 'true',
+        DISCORD_TOKEN: TOKEN,
+        DISCORD_API_BASE: discord,
+      });
+      expect(r.status).not.toBe(0);
+      expect(r.stdout + r.stderr).toContain('Discord did not identify the token as a bot user');
+      expect(r.stdout).not.toContain('bot identity confirmed');
+      expect(r.stderr).not.toContain('curl:');
+      expect(seen.discordAuthorization).toEqual([`Bot ${TOKEN}`]);
+    });
+  }
+
+  it('positive control: the pre-change step (anonymous POST, curl -f) fails under REQUIRED, which is what this change fixes', async () => {
+    const seen = seenNone();
+    const port = await mcpServer('refuse', seen);
+    const r = await runSmokeStep(
+      { HOST_PORT: String(port), STUDIO_AUTH_REQUIRED: 'true', DISCORD_TOKEN: TOKEN },
+      { run: PRE_CHANGE_STEP },
+    );
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('401');
+    // ...while the shipped step passes the very same server.
+    const discord = await discordServer('ok', seen);
+    const fixed = await runSmokeStep({
+      HOST_PORT: String(port),
+      STUDIO_AUTH_REQUIRED: 'true',
+      DISCORD_TOKEN: TOKEN,
+      DISCORD_API_BASE: discord,
+    });
+    expect(fixed.status).toBe(0);
   });
 
   it('never prints the token', async () => {
     const seen = seenNone();
     const port = await mcpServer('refuse', seen);
-    const discord = await discordServer(false, seen);
+    const discord = await discordServer('reject', seen);
     const r = await runSmokeStep({
       HOST_PORT: String(port),
       STUDIO_AUTH_REQUIRED: 'true',
@@ -188,7 +279,7 @@ describe.skipIf(IS_WINDOWS)(
       it(`REQUIRED=${JSON.stringify(required)}: checks the bot identity through POST /mcp and never calls Discord directly`, async () => {
         const seen = seenNone();
         const port = await mcpServer('open', seen);
-        const discord = await discordServer(true, seen);
+        const discord = await discordServer('ok', seen);
         const r = await runSmokeStep({
           HOST_PORT: String(port),
           STUDIO_AUTH_REQUIRED: required,

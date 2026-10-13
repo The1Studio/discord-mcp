@@ -209,8 +209,14 @@ nobody. Decision for this change:
 7. **Verify** a logged-in member passes, a non-member (403), a 2FA-off member (no assertion is minted) and an expired
    assertion (401) are refused, and the log shows `studio auth allow` lines.
 
-**Rollback:** unset `STUDIO_AUTH_REQUIRED` and `STUDIO_AUTH_ENABLED` (repository variables), re-run the deploy, and
-restore the Access app policy. No code change.
+**Rollback:** two levels, both repository variables, no code change; re-run the deploy after either.
+- Back to dual mode (the gate still verifies a claimed bearer, credential-less requests fall through again): delete
+  `STUDIO_AUTH_REQUIRED` or set it to `false`.
+- Gate fully off: set `STUDIO_AUTH_ENABLED` to `false` AND delete `STUDIO_AUTH_REQUIRED` (or set it to `false`). Setting
+  ENABLED to `false` is required: the workflow defaults it to `'true'` (`vars.STUDIO_AUTH_ENABLED || 'true'`), so
+  *deleting* it leaves the gate on, and `REQUIRED=true` with ENABLED off fails at construction.
+
+If the Access app policy was narrowed or removed, restore it as well.
 
 ## Cutover blockers (found by this change, none closed by it)
 
