@@ -112,19 +112,75 @@ jobs:
       - name: Smoke test - the secret authenticates against Discord
         # Readiness only proves the container is up with *some* long-enough token; a
         # wrong or rotated-away secret would deploy green and then 401 every tool
-        # call, so exercise one REST round trip through users_get_current and assert
-        # the bot identity.
+        # call, so exercise one REST round trip and assert the bot identity.
+        #
+        # Dual mode (STUDIO_AUTH_REQUIRED unset or false): the round trip goes through
+        # users_get_current over loopback, as always. REQUIRED=true: the container
+        # refuses every credential-less request, and this runner has none, so an
+        # anonymous POST /mcp is expected to be refused (401 studio_credential_required,
+        # the proof that Cloudflare Access can be narrowed) and the bot identity is
+        # checked directly against Discord with the same org secret instead.
+        # Same expressions as the override-render step above; the spec that runs this
+        # text is packages/mcp-server/src/transports/deploy-smoke.test.ts.
+        env:
+          STUDIO_AUTH_REQUIRED: ${{ vars.STUDIO_AUTH_REQUIRED }}
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
         run: |
           set -euo pipefail
-          curl -fsS -X POST "http://127.0.0.1:${HOST_PORT}/mcp" \
-            -H 'content-type: application/json' \
-            -H 'accept: application/json, text/event-stream' \
-            -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"users_get_current","arguments":{}}}' \
-            -o /tmp/discord-mcp-identity.json
-          grep -q '"bot":true' /tmp/discord-mcp-identity.json
-          if grep -q '"isError":true' /tmp/discord-mcp-identity.json; then
+          base="http://127.0.0.1:${HOST_PORT}"
+          out="$(mktemp)"
+          trap 'rm -f "$out"' EXIT
+          rpc='{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"users_get_current","arguments":{}}}'
+          mcp_call() {
+            curl -sS -o "$out" -w '%{http_code}' -X POST "$base/mcp" \
+              -H 'content-type: application/json' \
+              -H 'accept: application/json, text/event-stream' \
+              -d "$rpc"
+          }
+          code="$(mcp_call)"
+          required="${STUDIO_AUTH_REQUIRED:-}"
+          if [ "$required" = "true" ]; then
+            if [ "$code" != "401" ] || ! grep -q 'studio_credential_required' "$out"; then
+              echo "::error::the REQUIRED gate is switched on but an anonymous POST /mcp answered ${code}, not 401 studio_credential_required: the gate is not refusing anonymous callers"
+              exit 1
+            fi
+            echo " ✓ anonymous POST /mcp refused (401 studio_credential_required)"
+            # The token goes to curl on stdin (-K -), never on a command line.
+            printf 'header = "Authorization: Bot %s"\n' "${DISCORD_TOKEN#Bot }" \
+              | curl -fsS -K - "${DISCORD_API_BASE:-https://discord.com/api/v10}/users/@me" -o "$out"
+            # Parse the response: a substring match would accept any body that merely mentions the marker.
+            # No expected bot id is configured, so the check is "a bot user with a non-empty string id".
+            if ! command -v node >/dev/null 2>&1; then
+              echo "::error::node is required on the runner to verify the bot identity under STUDIO_AUTH_REQUIRED"
+              exit 1
+            fi
+            node -e '
+              const fail = (why) => {
+                console.error("::error::Discord did not identify the token as a bot user: " + why);
+                process.exit(1);
+              };
+              let u;
+              try {
+                u = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+              } catch {
+                fail("the /users/@me response is not JSON");
+              }
+              if (u === null || typeof u !== "object") fail("the /users/@me response is not an object");
+              if (u.bot !== true) fail("bot is not true");
+              if (typeof u.id !== "string" || u.id === "") fail("id is missing or empty");
+            ' "$out"
+            echo " ✓ bot identity confirmed directly against Discord"
+            exit 0
+          fi
+          if [ "$code" != "200" ]; then
+            echo "::error::POST /mcp answered ${code}, expected 200"
+            cat "$out"
+            exit 1
+          fi
+          grep -q '"bot":true' "$out"
+          if grep -q '"isError":true' "$out"; then
             echo "::error::users_get_current failed against Discord"
-            cat /tmp/discord-mcp-identity.json
+            cat "$out"
             exit 1
           fi
           echo " ✓ bot identity confirmed"

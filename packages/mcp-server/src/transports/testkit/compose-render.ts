@@ -4,7 +4,7 @@
  * pass-through shim, and the deploy checkout is a temp directory holding a copy of the real renderer script.
  * Nothing here re-implements the step; a change to the workflow or the script changes what the specs see.
  */
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
   chmodSync,
   copyFileSync,
@@ -137,4 +137,39 @@ export function parseOverride(override: string): ParsedOverride {
     topLevelKeys: Object.keys(doc),
     serviceNames: Object.keys(doc.services),
   };
+}
+
+export function smokeIdentityStep(): WorkflowStep | undefined {
+  return deployWorkflowSteps().find((s) =>
+    s.name?.startsWith('Smoke test - the secret authenticates'),
+  );
+}
+
+export interface SmokeResult {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+/**
+ * Runs the REAL "Smoke test - the secret authenticates against Discord" step (its `run:` text from deploy.yml)
+ * against a local server, the way the runner does (loopback, HOST_PORT). `spawn`, not `spawnSync`: the fake
+ * servers live in this process and must keep answering while the step runs. `run` replaces the step text
+ * (used to replay the pre-change step as a positive control).
+ */
+export function runSmokeStep(
+  env: Record<string, string>,
+  options: { run?: string } = {},
+): Promise<SmokeResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('bash', ['-c', options.run ?? smokeIdentityStep()?.run ?? 'exit 99'], {
+      env: { PATH: process.env.PATH ?? '', TMPDIR: tmpdir(), ...env },
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString('utf8')));
+    child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString('utf8')));
+    child.once('error', reject);
+    child.once('close', (status) => resolve({ status, stdout, stderr }));
+  });
 }
