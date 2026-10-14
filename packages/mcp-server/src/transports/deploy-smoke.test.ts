@@ -142,7 +142,7 @@ describe.skipIf(IS_WINDOWS)('deploy smoke step, STUDIO_AUTH_REQUIRED=true', () =
       HOST_PORT: String(port),
       STUDIO_AUTH_REQUIRED: 'true',
       DISCORD_TOKEN: `Bot ${TOKEN}`,
-      DISCORD_API_BASE: discord,
+      TEST_DISCORD_BASE: discord,
     });
     expect(r.stderr).toBe('');
     expect(r.status).toBe(0);
@@ -159,7 +159,7 @@ describe.skipIf(IS_WINDOWS)('deploy smoke step, STUDIO_AUTH_REQUIRED=true', () =
       HOST_PORT: String(port),
       STUDIO_AUTH_REQUIRED: 'true',
       DISCORD_TOKEN: TOKEN,
-      DISCORD_API_BASE: discord,
+      TEST_DISCORD_BASE: discord,
     });
     expect(r.status).toBe(0);
     expect(seen.discordAuthorization).toEqual([`Bot ${TOKEN}`]);
@@ -173,7 +173,7 @@ describe.skipIf(IS_WINDOWS)('deploy smoke step, STUDIO_AUTH_REQUIRED=true', () =
       HOST_PORT: String(port),
       STUDIO_AUTH_REQUIRED: 'true',
       DISCORD_TOKEN: TOKEN,
-      DISCORD_API_BASE: discord,
+      TEST_DISCORD_BASE: discord,
     });
     expect(r.status).not.toBe(0);
     expect(r.stdout + r.stderr).toContain('the gate is not refusing anonymous callers');
@@ -188,7 +188,7 @@ describe.skipIf(IS_WINDOWS)('deploy smoke step, STUDIO_AUTH_REQUIRED=true', () =
       HOST_PORT: String(port),
       STUDIO_AUTH_REQUIRED: 'true',
       DISCORD_TOKEN: TOKEN,
-      DISCORD_API_BASE: discord,
+      TEST_DISCORD_BASE: discord,
     });
     expect(r.status).not.toBe(0);
     expect(r.stdout + r.stderr).toContain('the gate is not refusing anonymous callers');
@@ -202,7 +202,7 @@ describe.skipIf(IS_WINDOWS)('deploy smoke step, STUDIO_AUTH_REQUIRED=true', () =
       HOST_PORT: String(port),
       STUDIO_AUTH_REQUIRED: 'true',
       DISCORD_TOKEN: TOKEN,
-      DISCORD_API_BASE: discord,
+      TEST_DISCORD_BASE: discord,
     });
     expect(r.status).not.toBe(0);
     expect(r.stderr).toContain('401');
@@ -228,7 +228,7 @@ describe.skipIf(IS_WINDOWS)('deploy smoke step, STUDIO_AUTH_REQUIRED=true', () =
         HOST_PORT: String(port),
         STUDIO_AUTH_REQUIRED: 'true',
         DISCORD_TOKEN: TOKEN,
-        DISCORD_API_BASE: discord,
+        TEST_DISCORD_BASE: discord,
       });
       expect(r.status).not.toBe(0);
       expect(r.stdout + r.stderr).toContain('Discord did not identify the token as a bot user');
@@ -253,7 +253,7 @@ describe.skipIf(IS_WINDOWS)('deploy smoke step, STUDIO_AUTH_REQUIRED=true', () =
       HOST_PORT: String(port),
       STUDIO_AUTH_REQUIRED: 'true',
       DISCORD_TOKEN: TOKEN,
-      DISCORD_API_BASE: discord,
+      TEST_DISCORD_BASE: discord,
     });
     expect(fixed.status).toBe(0);
   });
@@ -266,7 +266,7 @@ describe.skipIf(IS_WINDOWS)('deploy smoke step, STUDIO_AUTH_REQUIRED=true', () =
       HOST_PORT: String(port),
       STUDIO_AUTH_REQUIRED: 'true',
       DISCORD_TOKEN: TOKEN,
-      DISCORD_API_BASE: discord,
+      TEST_DISCORD_BASE: discord,
     });
     expect(r.stdout + r.stderr).not.toContain(TOKEN);
   });
@@ -284,7 +284,7 @@ describe.skipIf(IS_WINDOWS)(
           HOST_PORT: String(port),
           STUDIO_AUTH_REQUIRED: required,
           DISCORD_TOKEN: TOKEN,
-          DISCORD_API_BASE: discord,
+          TEST_DISCORD_BASE: discord,
         });
         expect(r.status).toBe(0);
         expect(r.stdout).toContain('bot identity confirmed');

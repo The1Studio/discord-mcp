@@ -151,19 +151,37 @@ export interface SmokeResult {
   stderr: string;
 }
 
-/**
- * Runs the REAL "Smoke test - the secret authenticates against Discord" step (its `run:` text from deploy.yml)
- * against a local server, the way the runner does (loopback, HOST_PORT). `spawn`, not `spawnSync`: the fake
- * servers live in this process and must keep answering while the step runs. `run` replaces the step text
- * (used to replay the pre-change step as a positive control).
- */
-export function runSmokeStep(
+/** The one host the smoke step may send the bot token to. The workflow passes it as a literal argument. */
+export const DISCORD_API_BASE_LITERAL = 'https://discord.com/api/v10';
+export const BOT_IDENTITY_SCRIPT = '.github/scripts/verify-discord-bot-identity.sh';
+
+/** Runs `bash -c <text>` with a pass-through `sudo` and a temp deploy checkout holding the real scripts. */
+function spawnInCheckout(
+  text: string,
   env: Record<string, string>,
-  options: { run?: string } = {},
+  args: string[] = [],
+  scriptText?: string,
 ): Promise<SmokeResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn('bash', ['-c', options.run ?? smokeIdentityStep()?.run ?? 'exit 99'], {
-      env: { PATH: process.env.PATH ?? '', TMPDIR: tmpdir(), ...env },
+  const dir = mkdtempSync(join(tmpdir(), 'discord-mcp-deploy-smoke-'));
+  const bin = join(dir, 'bin');
+  mkdirSync(bin);
+  writeFileSync(join(bin, 'sudo'), '#!/bin/sh\nexec "$@"\n');
+  chmodSync(join(bin, 'sudo'), 0o755);
+  const root = join(dir, 'checkout');
+  mkdirSync(join(root, '.github/scripts'), { recursive: true });
+  if (scriptText === undefined) {
+    copyFileSync(join(REPO_ROOT, BOT_IDENTITY_SCRIPT), join(root, BOT_IDENTITY_SCRIPT));
+  } else {
+    writeFileSync(join(root, BOT_IDENTITY_SCRIPT), scriptText);
+  }
+  return new Promise<SmokeResult>((resolve, reject) => {
+    const child = spawn('bash', ['-c', text, 'bash', ...args], {
+      env: {
+        PATH: `${bin}${delimiter}${process.env.PATH ?? ''}`,
+        TMPDIR: dir,
+        DEPLOY_ROOT: root,
+        ...env,
+      },
     });
     let stdout = '';
     let stderr = '';
@@ -171,5 +189,51 @@ export function runSmokeStep(
     child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString('utf8')));
     child.once('error', reject);
     child.once('close', (status) => resolve({ status, stdout, stderr }));
-  });
+  }).finally(() => rmSync(dir, { recursive: true, force: true }));
+}
+
+/**
+ * Runs the REAL "Smoke test - the secret authenticates against Discord" step (its `run:` text from deploy.yml)
+ * against a local server, the way the runner does (loopback, HOST_PORT). `spawn`, not `spawnSync`: the fake
+ * servers live in this process and must keep answering while the step runs. `run` replaces the step text
+ * (used to replay the pre-change step as a positive control).
+ *
+ * The step hardcodes the Discord host, so a fake Discord needs a seam: `TEST_DISCORD_BASE` (consumed here, never
+ * passed to the step) replaces that literal in the step text. The literal must be present exactly once, or the
+ * run throws: a step that no longer names the host cannot be redirected, and a spec must notice that. Every other
+ * variable reaches the step untouched, so a stray `DISCORD_API_BASE` in the runner environment is testable.
+ */
+export function runSmokeStep(
+  env: Record<string, string>,
+  options: { run?: string } = {},
+): Promise<SmokeResult> {
+  const { TEST_DISCORD_BASE: fakeDiscord, ...stepEnv } = env;
+  let text = options.run ?? smokeIdentityStep()?.run ?? 'exit 99';
+  if (fakeDiscord !== undefined) {
+    const occurrences = text.split(DISCORD_API_BASE_LITERAL).length - 1;
+    if (occurrences !== 1) {
+      throw new Error(
+        `expected the step to name ${DISCORD_API_BASE_LITERAL} exactly once, found ${occurrences}`,
+      );
+    }
+    text = text.replace(DISCORD_API_BASE_LITERAL, fakeDiscord);
+  }
+  return spawnInCheckout(text, stepEnv);
+}
+
+/**
+ * Runs the real identity script directly: `base` is its positional argument, `env` its environment.
+ * `scriptText` runs a modified copy instead (a mutation, used to prove a spec can fail).
+ */
+export function runBotIdentityScript(
+  env: Record<string, string>,
+  base: string,
+  scriptText?: string,
+): Promise<SmokeResult> {
+  return spawnInCheckout(
+    'exec bash "$DEPLOY_ROOT/$1" "$2"',
+    env,
+    [BOT_IDENTITY_SCRIPT, base],
+    scriptText,
+  );
 }

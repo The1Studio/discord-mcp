@@ -145,31 +145,13 @@ jobs:
               exit 1
             fi
             echo " ✓ anonymous POST /mcp refused (401 studio_credential_required)"
-            # The token goes to curl on stdin (-K -), never on a command line.
-            printf 'header = "Authorization: Bot %s"\n' "${DISCORD_TOKEN#Bot }" \
-              | curl -fsS -K - "${DISCORD_API_BASE:-https://discord.com/api/v10}/users/@me" -o "$out"
-            # Parse the response: a substring match would accept any body that merely mentions the marker.
-            # No expected bot id is configured, so the check is "a bot user with a non-empty string id".
-            if ! command -v node >/dev/null 2>&1; then
-              echo "::error::node is required on the runner to verify the bot identity under STUDIO_AUTH_REQUIRED"
-              exit 1
-            fi
-            node -e '
-              const fail = (why) => {
-                console.error("::error::Discord did not identify the token as a bot user: " + why);
-                process.exit(1);
-              };
-              let u;
-              try {
-                u = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
-              } catch {
-                fail("the /users/@me response is not JSON");
-              }
-              if (u === null || typeof u !== "object") fail("the /users/@me response is not an object");
-              if (u.bot !== true) fail("bot is not true");
-              if (typeof u.id !== "string" || u.id === "") fail("id is missing or empty");
-            ' "$out"
-            echo " ✓ bot identity confirmed directly against Discord"
+            # The identity check lives in a script (validated, tested): it takes the token from DISCORD_TOKEN,
+            # rejects a token that could inject curl config lines, and sends it to curl on stdin (-K -), never on
+            # a command line. The API host is the LITERAL below and is passed as an argument, never read from the
+            # environment, so nothing set on the runner can redirect the bot token. The script is read from the
+            # deploy checkout through sudo (the runner cannot traverse /root), like the renderer above.
+            sudo cat "$DEPLOY_ROOT/.github/scripts/verify-discord-bot-identity.sh" \
+              | bash -s -- 'https://discord.com/api/v10'
             exit 0
           fi
           if [ "$code" != "200" ]; then
