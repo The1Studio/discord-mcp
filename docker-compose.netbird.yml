@@ -11,8 +11,7 @@
 # *.the1studio.org certificate (resolver letsencrypt-dns), so no new issuance.
 #
 # The public path (Cloudflare tunnel -> localhost:3001) is unaffected: the
-# port publish stays in the rendered override, and studio-auth still gates
-# every request on both paths.
+# port publish stays in the rendered override.
 services:
   discord-mcp:
     networks: [default, netbird]

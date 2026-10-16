@@ -45,21 +45,6 @@ jobs:
         # hand-maintained on the box.
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
-          # Studio-auth (assertion) gate, ON by default. The committed values below are the defaults; a repository
-          # variable of the same name still overrides each one (set STUDIO_AUTH_ENABLED=false to switch the gate
-          # off without a code change). REQUIRED stays unset (dual mode: the legacy path keeps serving), and
-          # ALLOW_SUBS / STUDIO_KIDS stay optional narrowing. ALLOW_ALL_AUDIENCE_MEMBERS=true (explicit opt-in,
-          # set the variable to `false` to turn it off) makes the audience claim (`discord-mcp`, pinned in code)
-          # the access decision when ALLOW_SUBS is empty: a GitHub team permission on this repo in studio-auth.
-          # The override is regenerated on every deploy, which is why the gate is configured here and not by
-          # editing a file on the box. See docs/studio-auth.md.
-          STUDIO_AUTH_ENABLED: ${{ vars.STUDIO_AUTH_ENABLED || 'true' }}
-          STUDIO_AUTH_REQUIRED: ${{ vars.STUDIO_AUTH_REQUIRED }}
-          STUDIO_AUTH_ISSUER: ${{ vars.STUDIO_AUTH_ISSUER || 'https://auth-api.the1studio.org' }}
-          STUDIO_AUTH_JWKS_URL: ${{ vars.STUDIO_AUTH_JWKS_URL || 'https://auth-api.the1studio.org/.well-known/jwks.json' }}
-          STUDIO_AUTH_ALLOW_SUBS: ${{ vars.STUDIO_AUTH_ALLOW_SUBS }}
-          STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS: ${{ vars.STUDIO_AUTH_ALLOW_ALL_AUDIENCE_MEMBERS || 'true' }}
-          STUDIO_AUTH_STUDIO_KIDS: ${{ vars.STUDIO_AUTH_STUDIO_KIDS }}
         run: |
           set -euo pipefail
           if [ -z "${DISCORD_TOKEN:-}" ]; then
@@ -67,15 +52,19 @@ jobs:
             exit 1
           fi
           umask 077
-          # The renderer lives in the deploy checkout (the previous step just reset it to origin/main) and is
-          # read through sudo because the runner cannot traverse /root. It validates every studio value against
-          # its documented charset and fails this step with an ::error:: before writing anything, so a bad
-          # repository variable cannot add keys to a file that docker compose runs as root. Nothing reaches
-          # the real override until the whole render succeeded.
-          rendered="$(mktemp)"
-          trap 'rm -f "$rendered"' EXIT
-          sudo cat "$DEPLOY_ROOT/.github/scripts/render-compose-override.sh" | bash -s -- "$rendered"
-          sudo tee "$DEPLOY_ROOT/docker-compose.override.yml" > /dev/null < "$rendered"
+          sudo tee "$DEPLOY_ROOT/docker-compose.override.yml" > /dev/null <<EOF
+          services:
+            discord-mcp:
+              environment:
+                DISCORD_TOKEN: "$DISCORD_TOKEN"
+                # Destructive tools and Components V2 sends execute only when a call ALSO
+                # passes __confirm:true (V2: plus the one-time payload hash + approval id).
+                # With the default (true) every such call returns DRY_RUN_PREVIEW, so V2
+                # cards could never be sent from this deployment.
+                MCP_DRY_RUN: "false"
+              ports:
+                - "${HOST_PORT}:3000"
+          EOF
           # tee keeps an existing file's mode, so an override left at 644 by an
           # earlier hand-written version would stay world-readable.
           sudo chmod 600 "$DEPLOY_ROOT/docker-compose.override.yml"
@@ -117,57 +106,19 @@ jobs:
       - name: Smoke test - the secret authenticates against Discord
         # Readiness only proves the container is up with *some* long-enough token; a
         # wrong or rotated-away secret would deploy green and then 401 every tool
-        # call, so exercise one REST round trip and assert the bot identity.
-        #
-        # Dual mode (STUDIO_AUTH_REQUIRED unset or false): the round trip goes through
-        # users_get_current over loopback, as always. REQUIRED=true: the container
-        # refuses every credential-less request, and this runner has none, so an
-        # anonymous POST /mcp is expected to be refused (401 studio_credential_required,
-        # the proof that Cloudflare Access can be narrowed) and the bot identity is
-        # checked directly against Discord with the same org secret instead.
-        # Same expressions as the override-render step above; the spec that runs this
-        # text is packages/mcp-server/src/transports/deploy-smoke.test.ts.
-        env:
-          STUDIO_AUTH_REQUIRED: ${{ vars.STUDIO_AUTH_REQUIRED }}
-          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+        # call, so exercise one REST round trip through users_get_current and assert
+        # the bot identity.
         run: |
           set -euo pipefail
-          base="http://127.0.0.1:${HOST_PORT}"
-          out="$(mktemp)"
-          trap 'rm -f "$out"' EXIT
-          rpc='{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"users_get_current","arguments":{}}}'
-          mcp_call() {
-            curl -sS -o "$out" -w '%{http_code}' -X POST "$base/mcp" \
-              -H 'content-type: application/json' \
-              -H 'accept: application/json, text/event-stream' \
-              -d "$rpc"
-          }
-          code="$(mcp_call)"
-          required="${STUDIO_AUTH_REQUIRED:-}"
-          if [ "$required" = "true" ]; then
-            if [ "$code" != "401" ] || ! grep -q 'studio_credential_required' "$out"; then
-              echo "::error::the REQUIRED gate is switched on but an anonymous POST /mcp answered ${code}, not 401 studio_credential_required: the gate is not refusing anonymous callers"
-              exit 1
-            fi
-            echo " ✓ anonymous POST /mcp refused (401 studio_credential_required)"
-            # The identity check lives in a script (validated, tested): it takes the token from DISCORD_TOKEN,
-            # rejects a token that could inject curl config lines, and sends it to curl on stdin (-K -), never on
-            # a command line. The API host is the LITERAL below and is passed as an argument, never read from the
-            # environment, so nothing set on the runner can redirect the bot token. The script is read from the
-            # deploy checkout through sudo (the runner cannot traverse /root), like the renderer above.
-            sudo cat "$DEPLOY_ROOT/.github/scripts/verify-discord-bot-identity.sh" \
-              | bash -s -- 'https://discord.com/api/v10'
-            exit 0
-          fi
-          if [ "$code" != "200" ]; then
-            echo "::error::POST /mcp answered ${code}, expected 200"
-            cat "$out"
-            exit 1
-          fi
-          grep -q '"bot":true' "$out"
-          if grep -q '"isError":true' "$out"; then
+          curl -fsS -X POST "http://127.0.0.1:${HOST_PORT}/mcp" \
+            -H 'content-type: application/json' \
+            -H 'accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"users_get_current","arguments":{}}}' \
+            -o /tmp/discord-mcp-identity.json
+          grep -q '"bot":true' /tmp/discord-mcp-identity.json
+          if grep -q '"isError":true' /tmp/discord-mcp-identity.json; then
             echo "::error::users_get_current failed against Discord"
-            cat "$out"
+            cat /tmp/discord-mcp-identity.json
             exit 1
           fi
           echo " ✓ bot identity confirmed"

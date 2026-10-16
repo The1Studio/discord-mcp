@@ -8,8 +8,7 @@
       "!**/coverage",
       "!**/.turbo",
       "!**/node_modules",
-      "!packages/mcp-core/src/tools/templates/catalog/catalog.generated.json",
-      "!packages/mcp-server/src/transports/vendor/studio-auth-verify.mjs"
+      "!packages/mcp-core/src/tools/templates/catalog/catalog.generated.json"
     ]
   },
   "formatter": {
