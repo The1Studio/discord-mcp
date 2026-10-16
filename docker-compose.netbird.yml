@@ -1,0 +1,34 @@
+# Deploy-only overlay: publish the MCP endpoint on the NetBird mesh.
+#
+# Applied by the deploy workflow alongside docker-compose.yml and the rendered
+# docker-compose.override.yml. It is NOT part of local development: the netbird
+# network is external and only exists on sv-2, so `docker compose up` with just
+# docker-compose.yml + docker-compose.override.yml keeps working off the server.
+#
+# The service joins theone-vpn_netbird so traefik (netbird-traefik on sv-2) can
+# reach it by name, and carries a router scoped to the mesh (10.100.0.0/16) plus
+# site-A LAN (192.168.1.0/24). traefik already holds the wildcard
+# *.the1studio.org certificate (resolver letsencrypt-dns), so no new issuance.
+#
+# The public path (Cloudflare tunnel -> localhost:3001) is unaffected: the
+# port publish stays in the rendered override, and studio-auth still gates
+# every request on both paths.
+services:
+  discord-mcp:
+    networks: [default, netbird]
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: theone-vpn_netbird
+      traefik.http.routers.discord-mcp.rule: Host(`discord-mcp.the1studio.org`)
+      traefik.http.routers.discord-mcp.entrypoints: websecure
+      traefik.http.routers.discord-mcp.tls: "true"
+      traefik.http.routers.discord-mcp.tls.certresolver: letsencrypt-dns
+      traefik.http.routers.discord-mcp.tls.domains[0].main: "*.the1studio.org"
+      traefik.http.routers.discord-mcp.middlewares: discord-mcp-allowlist
+      traefik.http.middlewares.discord-mcp-allowlist.ipallowlist.sourcerange: 10.100.0.0/16,192.168.1.0/24
+      traefik.http.services.discord-mcp.loadbalancer.server.port: "3000"
+
+networks:
+  netbird:
+    external: true
+    name: theone-vpn_netbird
