@@ -85,13 +85,17 @@ jobs:
         # compose runs as root through sudo. Naming a file with -f also disables
         # compose's automatic docker-compose.override.yml discovery, so the override
         # must be passed explicitly - omitting it silently drops the token and leaves
-        # the container crash-looping.
+        # the container crash-looping. Same for the netbird overlay: it is the only
+        # place the traefik router for this service is declared, so omitting it
+        # silently withdraws discord-mcp.the1studio.org from the mesh.
         run: |
           set -euo pipefail
           sudo docker compose -f "$DEPLOY_ROOT/docker-compose.yml" \
-            -f "$DEPLOY_ROOT/docker-compose.override.yml" up -d --build
+            -f "$DEPLOY_ROOT/docker-compose.override.yml" \
+            -f "$DEPLOY_ROOT/docker-compose.netbird.yml" up -d --build
           sudo docker compose -f "$DEPLOY_ROOT/docker-compose.yml" \
-            -f "$DEPLOY_ROOT/docker-compose.override.yml" ps
+            -f "$DEPLOY_ROOT/docker-compose.override.yml" \
+            -f "$DEPLOY_ROOT/docker-compose.netbird.yml" ps
 
       - name: Smoke test - readiness endpoint
         run: |
@@ -106,7 +110,8 @@ jobs:
           done
           echo "✗ readiness probe failed"
           sudo docker compose -f "$DEPLOY_ROOT/docker-compose.yml" \
-            -f "$DEPLOY_ROOT/docker-compose.override.yml" logs --tail 50
+            -f "$DEPLOY_ROOT/docker-compose.override.yml" \
+            -f "$DEPLOY_ROOT/docker-compose.netbird.yml" logs --tail 50
           exit 1
 
       - name: Smoke test - the secret authenticates against Discord
