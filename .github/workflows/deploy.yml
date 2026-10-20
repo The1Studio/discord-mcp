@@ -17,7 +17,11 @@ jobs:
     timeout-minutes: 20
     env:
       DEPLOY_ROOT: /root/Projects/discord-mcp
-      HOST_PORT: '3001'
+      # No host port is published: the netbird overlay's traefik router is the
+      # only ingress. The --resolve lands probes on the mesh IP, inside the
+      # router's ipAllowList.
+      SMOKE_BASE: https://discord-mcp.the1studio.org
+      SMOKE_RESOLVE: discord-mcp.the1studio.org:443:10.100.171.201
       REPO_URL: https://github.com/The1Studio/discord-mcp.git
     steps:
       - name: Clone or update the deploy checkout to origin/main
@@ -62,8 +66,6 @@ jobs:
                 # With the default (true) every such call returns DRY_RUN_PREVIEW, so V2
                 # cards could never be sent from this deployment.
                 MCP_DRY_RUN: "false"
-              ports:
-                - "${HOST_PORT}:3000"
           EOF
           # tee keeps an existing file's mode, so an override left at 644 by an
           # earlier hand-written version would stay world-readable.
@@ -89,8 +91,10 @@ jobs:
       - name: Smoke test - readiness endpoint
         run: |
           set -euo pipefail
+          curl_args=(-fsS)
+          [ -n "${SMOKE_RESOLVE:-}" ] && curl_args+=(--resolve "$SMOKE_RESOLVE")
           for i in $(seq 1 10); do
-            if curl -fsS "http://127.0.0.1:${HOST_PORT}/healthz"; then
+            if curl "${curl_args[@]}" "${SMOKE_BASE}/healthz"; then
               echo " ✓ readiness pass"
               exit 0
             fi
@@ -110,7 +114,9 @@ jobs:
         # the bot identity.
         run: |
           set -euo pipefail
-          curl -fsS -X POST "http://127.0.0.1:${HOST_PORT}/mcp" \
+          curl_args=(-fsS)
+          [ -n "${SMOKE_RESOLVE:-}" ] && curl_args+=(--resolve "$SMOKE_RESOLVE")
+          curl "${curl_args[@]}" -X POST "${SMOKE_BASE}/mcp" \
             -H 'content-type: application/json' \
             -H 'accept: application/json, text/event-stream' \
             -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"users_get_current","arguments":{}}}' \

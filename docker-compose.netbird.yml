@@ -9,10 +9,7 @@
 # reach it by name, and carries a router scoped to the mesh (10.100.0.0/16) plus
 # site-A LAN (192.168.1.0/24). traefik already holds the wildcard
 # *.the1studio.org certificate (resolver letsencrypt-dns), so no new issuance.
-#
-# The public path (Cloudflare tunnel -> localhost:3001) is unaffected: the
-# port publish stays in the rendered override, and studio-auth still gates
-# every request on both paths.
+# No host port is published: this router is the only ingress.
 services:
   discord-mcp:
     networks: [default, netbird]

@@ -12,6 +12,6 @@ services:
     image: discord-mcp:local
     command: ["serve", "--http", "--host", "0.0.0.0", "--port", "3000"]
     # No `ports:` here by design: compose appends port lists on merge, so re-
-    # declaring them in the override would keep both. The host port is set in
-    # docker-compose.override.yml instead.
+    # declaring them in the override would keep both. The local-dev override
+    # sets a host port; the deploy override does not — traefik is the ingress.
     restart: unless-stopped
