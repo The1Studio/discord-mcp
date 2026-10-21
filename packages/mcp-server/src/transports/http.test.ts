@@ -226,7 +226,7 @@ describe('startHttp', () => {
     await client.connect(transport as never);
     try {
       const { tools } = await client.listTools();
-      expect(tools).toHaveLength(209);
+      expect(tools).toHaveLength(223);
     } finally {
       await client.close();
     }
@@ -311,7 +311,7 @@ describe('startHttp', () => {
       expect(transport.sessionId).toBeUndefined();
       const legacyList = await client.listTools();
       const { tools } = legacyList;
-      expect(tools).toHaveLength(222);
+      expect(tools).toHaveLength(223);
       expect(tools.map((tool) => tool.name)).toContain('messages_send');
       expect(legacyList.ttlMs).toBeUndefined();
       expect(legacyList.cacheScope).toBeUndefined();
@@ -340,7 +340,7 @@ describe('startHttp', () => {
       fetchSpy.mockClear();
       const firstList = await client.listTools();
       const { tools, ttlMs, cacheScope } = firstList;
-      expect(tools).toHaveLength(222);
+      expect(tools).toHaveLength(223);
       expect(tools.map((tool) => tool.name)).toContain('messages_send');
       expect(ttlMs).toBe(3_600_000);
       expect(cacheScope).toBe('private');

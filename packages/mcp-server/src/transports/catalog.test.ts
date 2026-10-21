@@ -29,11 +29,11 @@ describe('startCatalog', () => {
     process.env = { ...savedEnv };
   });
 
-  it('initializes over the supplied transport and exposes exactly 222 tools', async () => {
+  it('initializes over the supplied transport and exposes exactly 223 tools', async () => {
     const client = await boot();
     try {
       const { tools } = await client.listTools();
-      expect(tools).toHaveLength(222);
+      expect(tools).toHaveLength(223);
       expect(tools.some((tool) => tool.name === 'guild_get')).toBe(true);
       expect(tools.some((tool) => tool.name === 'messages_read')).toBe(true);
     } finally {

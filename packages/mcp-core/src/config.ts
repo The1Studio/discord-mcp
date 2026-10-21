@@ -27,6 +27,8 @@ const ConfigSchema = z.object({
       'ALLOWED_GUILDS must be a comma-separated list of 17-20 digit Discord snowflakes',
     )
     .optional(),
+  // Optional bearer token for `serve --http`; unset leaves the endpoint open, so
+  // gate it at the network layer (reverse proxy, VPN, or Docker publish rule).
   DISCORD_MCP_ACCESS_TOKEN: z
     .string()
     .min(32, 'DISCORD_MCP_ACCESS_TOKEN must be at least 32 characters')

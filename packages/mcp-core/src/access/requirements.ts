@@ -198,7 +198,6 @@ export const COMPOSER_UPDATE_ACCESS = {
   ),
 } satisfies DiscordAccessRequirement;
 
-
 /** Channel write that also needs Attach Files when the payload carries uploads. */
 export const CHANNEL_WRITE_WITH_ATTACHMENTS_ACCESS = {
   ...CHANNEL_WRITE_ACCESS,
