@@ -22,7 +22,7 @@ jobs:
       # router's ipAllowList.
       SMOKE_BASE: https://discord-mcp.the1studio.org
       SMOKE_RESOLVE: discord-mcp.the1studio.org:443:10.100.171.201
-      REPO_URL: https://github.com/The1Studio/discord-mcp.git
+      REPO_URL: git@github.com:The1Studio/discord-mcp.git
     steps:
       - name: Clone or update the deploy checkout to origin/main
         # The runner is dietpi, which cannot traverse /root, so every git action runs
