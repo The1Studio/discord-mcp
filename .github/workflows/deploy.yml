@@ -21,7 +21,6 @@ jobs:
       # only ingress. The --resolve lands probes on the mesh IP, inside the
       # router's ipAllowList.
       SMOKE_BASE: https://discord-mcp.the1studio.org
-      SMOKE_RESOLVE: discord-mcp.the1studio.org:443:10.100.171.201
       REPO_URL: git@github.com:The1Studio/discord-mcp.git
     steps:
       - name: Clone or update the deploy checkout to origin/main
