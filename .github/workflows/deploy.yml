@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 20
     env:
       DEPLOY_ROOT: /root/Projects/discord-mcp
-      # No host port is published: the netbird overlay's traefik router is the
+      # No host port is published: the netbird overlay's proxy service is the
       # only ingress. The --resolve lands probes on the mesh IP, inside the
       # router's ipAllowList.
       SMOKE_BASE: https://discord-mcp.the1studio.org
@@ -77,7 +77,7 @@ jobs:
         # compose's automatic docker-compose.override.yml discovery, so the override
         # must be passed explicitly - omitting it silently drops the token and leaves
         # the container crash-looping. Same for the netbird overlay: it is the only
-        # place the traefik router for this service is declared, so omitting it
+        # place the proxy service for this service is declared, so omitting it
         # silently withdraws discord-mcp.the1studio.org from the mesh.
         run: |
           set -euo pipefail
