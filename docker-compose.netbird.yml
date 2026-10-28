@@ -5,9 +5,9 @@
 # network is external and only exists on sv-2, so `docker compose up` with just
 # docker-compose.yml + docker-compose.override.yml keeps working off the server.
 #
-# The service joins theone-vpn_netbird so traefik (netbird-traefik on sv-2) can
+# The service joins theone-vpn_netbird so the NetBird proxy (netbird-proxy on sv-2) can
 # reach it by name, and carries a router scoped to the mesh (10.100.0.0/16) plus
-# site-A LAN (192.168.1.0/24). traefik already holds the wildcard
+# NetBird-only. the proxy holds the wildcard
 # *.the1studio.org certificate (resolver letsencrypt-dns), so no new issuance.
 # No host port is published: this router is the only ingress.
 services:
