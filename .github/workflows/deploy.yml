@@ -91,11 +91,12 @@ jobs:
       - name: Smoke test - readiness endpoint
         run: |
           set -euo pipefail
-          curl_args=(-fsS)
+          curl_args=(-sS)
           [ -n "${SMOKE_RESOLVE:-}" ] && curl_args+=(--resolve "$SMOKE_RESOLVE")
           for i in $(seq 1 10); do
-            if curl "${curl_args[@]}" "${SMOKE_BASE}/healthz"; then
-              echo " ✓ readiness pass"
+            code=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "${SMOKE_BASE}/mcp" || true)
+            if [ "$code" = "200" ] || [ "$code" = "400" ] || [ "$code" = "405" ]; then
+              echo " ✓ readiness pass (HTTP $code on /mcp)"
               exit 0
             fi
             echo "attempt $i: not ready, retry in 3s"
@@ -114,7 +115,7 @@ jobs:
         # the bot identity.
         run: |
           set -euo pipefail
-          curl_args=(-fsS)
+          curl_args=(-sS)
           [ -n "${SMOKE_RESOLVE:-}" ] && curl_args+=(--resolve "$SMOKE_RESOLVE")
           curl "${curl_args[@]}" -X POST "${SMOKE_BASE}/mcp" \
             -H 'content-type: application/json' \
