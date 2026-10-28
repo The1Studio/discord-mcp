@@ -13,17 +13,6 @@
 services:
   discord-mcp:
     networks: [default, netbird]
-    labels:
-      traefik.enable: "true"
-      traefik.docker.network: theone-vpn_netbird
-      traefik.http.routers.discord-mcp.rule: Host(`discord-mcp.the1studio.org`)
-      traefik.http.routers.discord-mcp.entrypoints: websecure
-      traefik.http.routers.discord-mcp.tls: "true"
-      traefik.http.routers.discord-mcp.tls.certresolver: letsencrypt-dns
-      traefik.http.routers.discord-mcp.tls.domains[0].main: "*.the1studio.org"
-      traefik.http.routers.discord-mcp.middlewares: discord-mcp-allowlist
-      traefik.http.middlewares.discord-mcp-allowlist.ipallowlist.sourcerange: 10.100.0.0/16,192.168.1.0/24
-      traefik.http.services.discord-mcp.loadbalancer.server.port: "3000"
 
 networks:
   netbird:
